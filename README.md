@@ -332,17 +332,23 @@ These options are carefully chosen for:
 > ⚠️ **Secure Boot must be set to "Setup Mode" in the BIOS/UEFI before installation.**  
 > This is required to enroll your own Secure Boot keys with `sbctl`.
 
-This section will provide all individual shell commands used in the installation, including:
+This section provides every command used to build the system from a blank disk, explaining each step of the installation process.
 
-- 🧱 Partitioning & formatting
-- 🔐 LUKS2 setup with TPM2
-- 🗂️ Mounting and subvolume layout
-- 📦 Base system installation
-- 🧰 Chroot configuration
-- 🧬 UKI creation and signing
-- ⚙️ EFI setup
-- 🧊 Snapper configuration
-- 🌀 Swap and zRam activation
+The guide covers:
+
+- 🧱 **GPT partitioning and BTRFS filesystem creation**
+- 🔐 **LUKS2 encryption with TPM2 auto-unlocking and passphrase fallback**
+- 🗂️ **BTRFS subvolume creation and mounting**
+- 📸 **Snapper configuration for system snapshots and rollback**
+- 📦 **Base system installation**
+- 🧰 **System configuration inside the chroot environment**
+- 🧬 **Unified Kernel Image (UKI) generation and Secure Boot signing**
+- ⚙️ **EFI configuration and direct boot entry creation**
+- 🧵 **zRAM configuration**
+- 🌀 **Encrypted BTRFS swap file configuration**
+- 🛡️ **Post-install hardening and system optimization**
+- 🛟 **Fallback UKI configuration for boot recovery**
+- 🗄️ **Automatic EFI partition backup and recovery setup**
 
 ### 🧱 Step 1 — Pre-Installation Setup
 

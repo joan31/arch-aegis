@@ -12,6 +12,10 @@
 ![Snapper](https://img.shields.io/badge/Snapper-Enabled-darkslategray?style=flat-square&logo=simpleicons&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat-square&logo=open-source-initiative)](LICENSE)
 
+<p align="center">
+  <img src="assets/arch-aegis-readme.png" alt="Arch Aegis">
+</p>
+
 **Arch Aegis** is a modern, security-focused Arch Linux installation guide designed for users who value **security, reliability, simplicity and system recovery**.
 
 Built upon the foundations of the original **Arch Fortress** project and refined through the experience gained with **Arch Fortress: Reforged**, this guide represents a more mature and carefully engineered approach to building a **robust, predictable and recoverable Arch Linux system**.

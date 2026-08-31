@@ -406,6 +406,7 @@ cryptsetup --allow-discards --persistent open --type luks2 /dev/nvme0n1p2 crypta
 ```
 
 - 🧊 Format the unlocked LUKS volume with BTRFS (4K sectors)
+
 ```bash
 mkfs.btrfs -L "Arch Linux" -s 4096 /dev/mapper/cryptarch
 ```
@@ -413,11 +414,13 @@ mkfs.btrfs -L "Arch Linux" -s 4096 /dev/mapper/cryptarch
 ### 🌳 Step 4 — BTRFS Subvolume Layout
 
 - 🪵 Mount the root BTRFS volume temporarily
+
 ```bash
 mount -o rw,noatime,compress=zstd:3,ssd,discard=async,commit=120 /dev/mapper/cryptarch /mnt
 ```
 
 - 📂 Create BTRFS subvolumes
+
 ```bash
 btrfs subvolume create /mnt/@
 btrfs subvolume create /mnt/@swap
@@ -433,6 +436,7 @@ btrfs subvolume create /mnt/@games
 ```
 
 - 🔓 Unmount the volume before remounting subvolumes individually
+
 ```bash
 umount /mnt
 ```
@@ -440,23 +444,27 @@ umount /mnt
 ### 🛠️ Step 5 — Mount Subvolumes & Prepare System
 
 - 🔧 Mount root subvolume
+
 ```bash
 mount -o rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=@ \
   /dev/mapper/cryptarch /mnt
 ```
 
 - 🗂️ Create necessary mount points
+
 ```bash
 mkdir -p /mnt/{efi,.swap,.snapshots,.efibackup,var/{log,tmp,cache,lib/libvirt/images},home,srv,opt/games}
 ```
 
 - 🖥️ Mount EFI system partition (read-only, noexec for safety)
+
 ```bash
 mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022 \
   /dev/nvme0n1p1 /mnt/efi
 ```
 
 - 🧷 Mount other BTRFS subvolumes
+
 ```bash
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@swap /dev/mapper/cryptarch /mnt/.swap
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@snapshots /dev/mapper/cryptarch /mnt/.snapshots
@@ -473,6 +481,7 @@ mount -o rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120,su
 ### 💾 Step 6 — Create Swap File
 
 - 🛏️ Create 4GB swap file on BTRFS subvolume
+
 ```bash
 btrfs filesystem mkswapfile --size 4g /mnt/.swap/swapfile
 chmod 600 /mnt/.swap/swapfile
@@ -487,25 +496,30 @@ chmod 600 /mnt/.swap/swapfile
 ### 📦 Step 7 — Install Base System
 
 - 🧱 Install base packages, kernel + firmwares, EFI tools, btrfs support, text editor, secure boot tools, splash screen and zRam generator service
+
 ```bash
 pacstrap /mnt \
   base base-devel linux linux-headers linux-firmware amd-ucode neovim efibootmgr btrfs-progs sbctl plymouth zram-generator
 ```
+
 > 💡 `base-devel` is required for building packages from the AUR or compiling software from source, and `linux-headers` is needed for DKMS to build and maintain kernel modules.
 
 ### 🗂️ Step 8 — Generate fstab
 
 - 📄 Generate fstab with UUIDs
+
 ```bash
 genfstab -U /mnt >> /mnt/etc/fstab
 ```
 
 - 🔍 (Optional) Review fstab and check "0 1" to enable fsck on `/`
+
 ```bash
 cat /mnt/etc/fstab
 ```
 
 - Content:
+
 ```bash
 UUID=<BTRFS-UUID-PARTITION>      /      btrfs      rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=/@      0 1
 ```
@@ -550,6 +564,7 @@ FONT=lat9w-16
 ```bash
 localectl set-x11-keymap fr pc105 azerty compose:rctrl
 ```
+
 > 💡 This ensures correct keyboard compatibility with Xorg/XWayland apps and proper layout support in display managers like Plasma Login Manager (used by KDE Plasma).
 
 - 🌍 Set system-wide locale
@@ -651,28 +666,38 @@ hwclock --systohc
 ### 🧩 Step 14 — Initramfs Configuration (AMDGPU Module, Systemd, LUKS, Keyboard)
 
 - ⚙️ Edit initramfs modules and hooks to include AMDGPU driver before anything, systemd & encryption
+
 ```bash
 nvim /etc/mkinitcpio.conf
 ```
 
 - Content:
+
 ```bash
 MODULES=(amdgpu)
 
-HOOKS=(systemd plymouth autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems)
+HOOKS=(systemd plymouth autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems sd-shutdown)
 ```
 
+> 💡 **Why is `fsck` not included?**  
+> The `fsck` hook is intentionally omitted because **BTRFS does not use the traditional filesystem check workflow provided by `fsck`**. Unlike filesystems such as Ext4, BTRFS does not require a routine filesystem check during boot. Filesystem integrity and repair are handled by BTRFS-specific tools such as `btrfs check`, which can be run manually when required.
+>
+> This keeps the initramfs focused on the components actually required for boot, while avoiding unnecessary filesystem checks during normal startup.
+
 - 🔐 Setup encrypted volume for systemd to unlock via TPM2
+
 ```bash
 nvim /etc/crypttab.initramfs
 ```
 
 - Content:
+
 ```bash
-cryptarch UUID=<nvme-UUID> none tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard
+cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard
 ```
 
-- Get `<nvme-UUID>` on neovim:
+- Get `<NVME-UUID>` on neovim:
+
 ```bash
 :read ! lsblk -dno UUID /dev/nvme0n1p2
 ```
@@ -680,21 +705,32 @@ cryptarch UUID=<nvme-UUID> none tpm2-device=auto,password-echo=no,x-systemd.devi
 ### 🧵 Step 15 — Kernel Command Line Configuration (UKI + disable zswap)
 
 - ⚙️ Root and logging options (read-only fs is handled by systemd and to fsck /)
+
 ```bash
 nvim /etc/cmdline.d/01-root.conf
 ```
 
 - Content:
+
 ```bash
-root=/dev/mapper/cryptarch rootfstype=btrfs rootflags=subvol=@ ro loglevel=3 quiet splash
+root=/dev/mapper/cryptarch rootfstype=btrfs rootflags=subvol=@ ro loglevel=3 quiet
 ```
 
+> 💡 Why `ro`?
+> The root filesystem is initially mounted read-only during early boot. This allows systemd to perform the necessary filesystem checks before the root filesystem is remounted read-write later in the boot process.
+>
+> Since this configuration uses Btrfs and does not include the fsck hook in mkinitcpio, the ro flag ensures that the root filesystem is not modified before systemd has had the opportunity to perform its early-boot filesystem handling.
+
+> 💡 The `splash` parameter is intentionally omitted because Plymouth is used to provide the boot splash screen. If you want to use the splash screen provided by the `mkinitcpio` preset configured in the following step, you can add `splash` here.
+
 - 🧠 Disable kernel zswap to avoid duplicate swap compression when using zRam as primary swap device
+
 ```bash
 nvim /etc/cmdline.d/02-zswap.conf
 ```
 
 - Content:
+
 ```bash
 zswap.enabled=0
 ```
@@ -702,31 +738,42 @@ zswap.enabled=0
 ### 🧬 Step 16 — Initramfs Preset for Unified Kernel Image (UKI)
 
 - 🔧 Setup mkinitcpio preset to generate a UKI
+
 ```bash
 nvim /etc/mkinitcpio.d/linux.preset
 ```
 
 - Content only:
+
 ```bash
 ALL_kver="/boot/vmlinuz-linux"
-PRESETS=('default')
+
+PRESETS=('default' 'fallback')
+
 default_uki="/efi/EFI/Linux/arch-linux.efi"
+
+fallback_uki="/efi/EFI/Linux/arch-linux-fallback.efi"
+fallback_options="-S autodetect"
 ```
-> 💡 `default_options="--splash=/usr/share/systemd/bootctl/splash-arch.bmp"` is commented out by default and can be uncommented to enable the splash screen, but it may be redundant if Plymouth is used.
+
+> 💡 `default_options="--splash=/usr/share/systemd/bootctl/splash-arch.bmp"` is commented out by default and can be uncommented to enable the splash screen, but it may be redundant if **Plymouth** is used.
 
 ### 🔐 Step 17 — Secure Boot with sbctl
 
 - 🔑 Create Secure Boot keys
+
 ```bash
 sbctl create-keys
 ```
 
 - 📥 Enroll custom keys and micr0$0ft💩 keys
+
 ```bash
 sbctl enroll-keys -m
 ```
 
 - 🛠️ Generate the Unified Kernel Image
+
 ```bash
 mkdir -p /efi/EFI/Linux
 mkinitcpio -p linux
@@ -734,12 +781,58 @@ mkinitcpio -p linux
 
 > ℹ️ Note: TPM2-based disk decryption will be configured after the first reboot to ensure the system is fully initialized and all required services are available.
 
-### 💻 Step 18 — EFI Boot Entry
+> 💡 **Automatic UKI signing with `sbctl`**
+>
+> `sbctl` provides a **`mkinitcpio` post-hook** that automatically signs newly generated UKI files with the enrolled Secure Boot key.
+>
+> Therefore, no manual `sbctl sign` command is required after running `mkinitcpio`.
+>
+> - 🔍 Verify that the UKI is correctly signed:
+>
+> ```bash
+> sbctl verify
+> ```
+>
+> - Result:
+>
+> ```bash
+> Verifying file database and EFI images in /efi...
+> ✓ /efi/EFI/Linux/arch-linux-fallback.efi is signed
+> ✓ /efi/EFI/Linux/arch-linux.efi is signed
+> ```
+>
+> - ✍️ If the UKIs are not signed, they can be signed manually and added to the `sbctl` database:
+>
+> ```bash
+> sbctl sign -s /efi/EFI/Linux/arch-linux.efi
+> sbctl sign -s /efi/EFI/Linux/arch-linux-fallback.efi
+> ```
+>
+> The `-s` option saves the file path in the `sbctl` database, allowing it to be included in future automatic signing operations.
+
+- 🧹 Clean up unused initramfs images (Optional)
+
+```bash
+rm /boot/initramfs-*.img
+```
+
+> 💡 When using a Unified Kernel Image (UKI), the standalone `initramfs-*.img` files in `/boot` are no longer used for booting. They may have been generated automatically during the initial system installation with pacstrap.
+>
+> These leftover images can therefore be safely removed.
+
+## 💻 Step 18 — EFI Boot Entry
 
 - 🧷 Register UKI with UEFI firmware
+
 ```bash
-efibootmgr --create --disk /dev/nvme0n1 --part 1 \
-  --label "Arch Linux" --loader /EFI/Linux/arch-linux.efi --unicode
+efibootmgr --create --disk /dev/nvme0n1 --part 1 --label "Arch Linux" --loader /EFI/Linux/arch-linux.efi --unicode
+efibootmgr --create-only --disk /dev/nvme0n1 --part 1 --label "Arch Linux Fallback" --loader /EFI/Linux/arch-linux-fallback.efi --unicode
+```
+
+- 🔢 Set UEFI boot order
+
+```bash
+efibootmgr -o 0000,0001
 ```
 
 ### 🧠 Step 19 — zRam Setup

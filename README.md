@@ -353,17 +353,20 @@ The guide covers:
 ### 🧱 Step 1 — Pre-Installation Setup
 
 - ⌨️ (Optional) Set keyboard layout to French
+
 ```bash
 loadkeys fr
 ```
 
 - 🧼 Clean existing EFI entries if needed (replace X with the entry number)
+
 ```bash
 efibootmgr
 efibootmgr -b X -B
 ```
 
 - 🔐 Update GPG keys from live environment (recommended before installing)
+
 ```bash
 pacman -Sy archlinux-keyring
 ```
@@ -371,6 +374,7 @@ pacman -Sy archlinux-keyring
 ### 💽 Step 2 — Disk Partitioning (GPT)
 
 - ⚙️ Partition the disk: EFI (500MB) + LUKS root (rest of disk)
+
 ```bash
 sgdisk --clear --align-end \
   --new=1:0:+500M --typecode=1:ef00 --change-name=1:"EFI system partition" \
@@ -378,15 +382,16 @@ sgdisk --clear --align-end \
   /dev/nvme0n1
 ```
 
-### 🧼 Step 3 — Filesystem Creation
-
+### 🧼 Step 3 — Main Filesystem Creation
 
 - 🧴 Format EFI partition (optimized for NVMe 4K sector size)
+
 ```bash
 mkfs.vfat -F 32 -n "SYSTEM" -S 4096 -s 1 /dev/nvme0n1p1
 ```
 
 - 🔐 Create LUKS2 encrypted container with strong encryption options
+
 ```bash
 cryptsetup --type luks2 --cipher aes-xts-plain64 --hash sha512 \
   --iter-time 5000 --key-size 512 --pbkdf argon2id \
@@ -395,9 +400,9 @@ cryptsetup --type luks2 --cipher aes-xts-plain64 --hash sha512 \
 ```
 
 - 🔓 Open the LUKS container as /dev/mapper/cryptarch
+
 ```bash
-cryptsetup --allow-discards --persistent open --type luks2 \
-  /dev/nvme0n1p2 cryptarch
+cryptsetup --allow-discards --persistent open --type luks2 /dev/nvme0n1p2 cryptarch
 ```
 
 - 🧊 Format the unlocked LUKS volume with BTRFS (4K sectors)
@@ -409,8 +414,7 @@ mkfs.btrfs -L "Arch Linux" -s 4096 /dev/mapper/cryptarch
 
 - 🪵 Mount the root BTRFS volume temporarily
 ```bash
-mount -o rw,noatime,nodiratime,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120 \
-  /dev/mapper/cryptarch /mnt
+mount -o rw,noatime,compress=zstd:3,ssd,discard=async,commit=120 /dev/mapper/cryptarch /mnt
 ```
 
 - 📂 Create BTRFS subvolumes
@@ -420,9 +424,9 @@ btrfs subvolume create /mnt/@swap
 btrfs subvolume create /mnt/@snapshots
 btrfs subvolume create /mnt/@efibck
 btrfs subvolume create /mnt/@log
-btrfs subvolume create /mnt/@pkg
+btrfs subvolume create /mnt/@cache
 btrfs subvolume create /mnt/@tmp
-btrfs subvolume create /mnt/@vms
+btrfs subvolume create /mnt/@virt
 btrfs subvolume create /mnt/@home
 btrfs subvolume create /mnt/@srv
 btrfs subvolume create /mnt/@games
@@ -437,33 +441,33 @@ umount /mnt
 
 - 🔧 Mount root subvolume
 ```bash
-mount -o rw,noatime,nodiratime,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@ \
+mount -o rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=@ \
   /dev/mapper/cryptarch /mnt
 ```
 
 - 🗂️ Create necessary mount points
 ```bash
-mkdir -p /mnt/{efi,.swap,.snapshots,.efibackup,var/{log,tmp,cache/pacman/pkg,lib/libvirt/images},home,srv,opt/games}
+mkdir -p /mnt/{efi,.swap,.snapshots,.efibackup,var/{log,tmp,cache,lib/libvirt/images},home,srv,opt/games}
 ```
 
 - 🖥️ Mount EFI system partition (read-only, noexec for safety)
 ```bash
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,fmask=0022,dmask=0022 \
+mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022 \
   /dev/nvme0n1p1 /mnt/efi
 ```
 
 - 🧷 Mount other BTRFS subvolumes
 ```bash
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@swap /dev/mapper/cryptarch /mnt/.swap
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@snapshots /dev/mapper/cryptarch /mnt/.snapshots
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@efibck /dev/mapper/cryptarch /mnt/.efibackup
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@log /dev/mapper/cryptarch /mnt/var/log
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@tmp /dev/mapper/cryptarch /mnt/var/tmp
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@pkg /dev/mapper/cryptarch /mnt/var/cache/pacman/pkg
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@vms /dev/mapper/cryptarch /mnt/var/lib/libvirt/images
-mount -o rw,noatime,nodiratime,nodev,nosuid,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@home /dev/mapper/cryptarch /mnt/home
-mount -o rw,noatime,nodiratime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@srv /dev/mapper/cryptarch /mnt/srv
-mount -o rw,noatime,nodiratime,nodev,nosuid,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=@games /dev/mapper/cryptarch /mnt/opt/games
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@swap /dev/mapper/cryptarch /mnt/.swap
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@snapshots /dev/mapper/cryptarch /mnt/.snapshots
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@efibck /dev/mapper/cryptarch /mnt/.efibackup
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@log /dev/mapper/cryptarch /mnt/var/log
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@tmp /dev/mapper/cryptarch /mnt/var/tmp
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@cache /dev/mapper/cryptarch /mnt/var/cache/pacman/pkg
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@virt /dev/mapper/cryptarch /mnt/var/lib/libvirt/images
+mount -o rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120,subvol=@home /dev/mapper/cryptarch /mnt/home
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@srv /dev/mapper/cryptarch /mnt/srv
+mount -o rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120,subvol=@games /dev/mapper/cryptarch /mnt/opt/games
 ```
 
 ### 💾 Step 6 — Create Swap File
@@ -474,13 +478,18 @@ btrfs filesystem mkswapfile --size 4g /mnt/.swap/swapfile
 chmod 600 /mnt/.swap/swapfile
 ```
 
+> 🔐 **Note:** The swap file is **not enabled at this stage**.
+>
+> Arch Aegis uses an **ephemeral encrypted swap** configured through **`/etc/crypttab`**, using a random key generated from **`/dev/urandom`** at every boot.
+>
+> The encrypted swap mapping and the `swapon` command will therefore be configured later in the installation guide, once the encrypted swap device has been properly configured.
+
 ### 📦 Step 7 — Install Base System
 
 - 🧱 Install base packages, kernel + firmwares, EFI tools, btrfs support, text editor, secure boot tools, splash screen and zRam generator service
 ```bash
 pacstrap /mnt \
-  base base-devel linux linux-headers linux-firmware amd-ucode \
-  neovim efibootmgr btrfs-progs sbctl plymouth zram-generator
+  base base-devel linux linux-headers linux-firmware amd-ucode neovim efibootmgr btrfs-progs sbctl plymouth zram-generator
 ```
 > 💡 `base-devel` is required for building packages from the AUR or compiling software from source, and `linux-headers` is needed for DKMS to build and maintain kernel modules.
 
@@ -493,17 +502,30 @@ genfstab -U /mnt >> /mnt/etc/fstab
 
 - 🔍 (Optional) Review fstab and check "0 1" to enable fsck on `/`
 ```bash
-nvim /mnt/etc/fstab
+cat /mnt/etc/fstab
 ```
 
 - Content:
 ```bash
-UUID=<BTRFS-UUID-PARTITION>      /      btrfs      rw,noatime,nodiratime,compress=zstd:3,ssd,discard=async,space_cache=v2,commit=120,subvol=/@      0 1
+UUID=<BTRFS-UUID-PARTITION>      /      btrfs      rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=/@      0 1
 ```
+
+> 💡 **Note:** The first value controls the legacy `dump` backup utility and is normally set to `0`. The second value controls the order in which filesystems are checked by `fsck`: `1` for the root filesystem and `2` for other filesystems.
+
+> 📝 `fstab` uses the last two fields to control `dump` and filesystem checks:
+>
+> | Value | 🔎 Description |
+> |-------|----------------|
+> | `0 0` | 🚫 Disable `dump` and do not check the filesystem automatically with `fsck`. |
+> | `0 1` | 💾 Disable `dump` and check the filesystem first with `fsck` — used for `/`. |
+> | `0 2` | 💾 Disable `dump` and check the filesystem after `/` — used for other filesystems. |
+
+> 🔐 The `UUID=<...>` values above are placeholders. `genfstab` will automatically generate the correct UUID entries for the mounted filesystems. Review the generated file and verify that the mount options and filesystem check values are correct before continuing.
 
 ### 🚪 Step 9 — Enter Chroot
 
 - 🌀 Change root into new system
+
 ```bash
 arch-chroot /mnt
 ```
@@ -511,28 +533,33 @@ arch-chroot /mnt
 ### 🌐 Step 10 — Keyboard & Locale Configuration
 
 - ⌨️ Set virtual console keyboard to French
+
 ```bash
 nvim /etc/vconsole.conf
 ```
 
 - Content:
+
 ```bash
 KEYMAP=fr
 FONT=lat9w-16
 ```
 
 - 🧩 Set X11 keyboard layout
+
 ```bash
 localectl set-x11-keymap fr pc105 azerty compose:rctrl
 ```
 > 💡 This ensures correct keyboard compatibility with Xorg/XWayland apps and proper layout support in display managers like Plasma Login Manager (used by KDE Plasma).
 
 - 🌍 Set system-wide locale
+
 ```bash
 nvim /etc/locale.conf
 ```
 
 - Content:
+
 ```bash
 LANG=fr_FR.UTF-8
 LC_COLLATE=C
@@ -540,17 +567,20 @@ LC_MESSAGES=en_US.UTF-8
 ```
 
 - 🔓 Enable required locales
+
 ```bash
 nvim /etc/locale.gen
 ```
 
 - Uncomment:
+
 ```bash
 en_US.UTF-8 UTF-8
 fr_FR.UTF-8 UTF-8
 ```
 
 - ⚙️ Generate locale definitions
+
 ```bash
 locale-gen
 ```
@@ -558,52 +588,65 @@ locale-gen
 ### 🔢 Step 11 — TTY Behavior (Enable NumLock)
 
 - 🧷 Create drop-in to activate NumLock automatically on TTY login
+
 ```bash
 mkdir /etc/systemd/system/getty@.service.d
 nvim /etc/systemd/system/getty@.service.d/activate-numlock.conf
 ```
 
 - Content:
+
 ```bash
 [Service]
 ExecStartPre=/bin/sh -c 'setleds -D +num < /dev/%I'
 ```
 
+> 💡 This enables NumLock automatically when a getty session starts on a virtual terminal (TTY).
+
 ### 🖥️ Step 12 — Host Identity Configuration
 
 - 🏷️ Set system hostname
+
 ```bash
 nvim /etc/hostname
 ```
 
 - Content:
+
 ```bash
 lianli-arch
 ```
 
 - 🧭 Set hosts file entries for local networking
+
 ```bash
 nvim /etc/hosts
 ```
 
 - Content:
+
 ```bash
 127.0.0.1      localhost
 ::1            localhost
+127.0.1.1      lianli-arch.zenitram lianli-arch
 192.168.1.101  lianli-arch.zenitram lianli-arch
 ```
 
 ### 🕒 Step 13 — Timezone & Clock Setup
 
 - 🌍 Set system timezone
+
 ```bash
 ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
 ```
 
 - ⏱️ Sync hardware clock with system time
+
 ```bash
 hwclock --systohc
 ```
+
+> 💡 This synchronizes the hardware clock with the configured system time.
 
 ### 🧩 Step 14 — Initramfs Configuration (AMDGPU Module, Systemd, LUKS, Keyboard)
 

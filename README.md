@@ -835,14 +835,16 @@ efibootmgr --create-only --disk /dev/nvme0n1 --part 1 --label "Arch Linux Fallba
 efibootmgr -o 0000,0001
 ```
 
-### 🧠 Step 19 — zRam Setup
+#### 🧠 Step 19 — zRam Setup
 
 - ⚙️ Configure zRam swap device (primary in-memory compressed swap)
+
 ```bash
 nvim /etc/systemd/zram-generator.conf
 ```
 
 - Content (balanced gaming + desktop performance):
+
 ```bash
 [zram0]
 zram-size = min(ram / 4, 8 * 1024)
@@ -852,11 +854,13 @@ fs-type = swap
 ```
 
 - 🧮 Configure kernel virtual memory parameters for zRam-based swap behavior
+
 ```bash
 nvim /etc/sysctl.d/99-vm-zram-parameters.conf
 ```
 
 - Content (low-latency desktop + gaming responsiveness):
+
 ```bash
 vm.swappiness = 20
 vm.watermark_boost_factor = 0
@@ -867,34 +871,40 @@ vm.page-cluster = 0
 ### 🔄 Step 20 — Encrypted Swap Setup
 
 - 🔐 Add encrypted swap mapping using `/dev/urandom` (secure swapfile via device-mapper)
+
 ```bash
 nvim /etc/crypttab
 ```
 
 - Content:
+
 ```bash
 swap      /.swap/swapfile      /dev/urandom      swap,cipher=aes-xts-plain64,sector-size=4096
 ```
 
 - 📄 Add swap entry with low priority (fallback to zram)
+
 ```bash
 nvim /etc/fstab
 ```
 
 - Content:
+
 ```bash
-#	/.swap/swapfile      ENCRYPTED FALLBACK SWAP
+#    /.swap/swapfile      ENCRYPTED FALLBACK SWAP
 /dev/mapper/swap      none      swap      pri=0      0 0
 ```
 
 ### 📦 Step 21 — Pacman Configuration
 
 - 📦 Enable multilib, candy theme, parallel downloads & ignore snapper cron jobs
+
 ```bash
 nvim /etc/pacman.conf
 ```
 
 - Content:
+
 ```bash
 NoExtract = etc/cron.hourly/snapper
 Color
@@ -906,6 +916,7 @@ Include = /etc/pacman.d/mirrorlist
 ```
 
 ### 🌐 Step 22 — Network Configuration
+
 > 🔀 Choose one network management method depending on your setup
 > - ⚙️ `systemd-networkd` → lightweight, minimal, server-friendly, wired only
 > - 🖥️ `NetworkManager` → recommended for desktop environments (e.g. KDE Plasma, GNOME) with Wi-Fi support
@@ -913,11 +924,13 @@ Include = /etc/pacman.d/mirrorlist
 ####  ⚙️ Option A — systemd-networkd (Only Wired, Minimal & Lightweight)
 
 - 📡 Configure wired interface for DHCP, mDNS, and IPv6
+
 ```bash
 nvim /etc/systemd/network/20-wired.network
 ```
 
 - Content:
+
 <details>
 <summary>📄 <code>20-wired.network</code> content (click to expand)</summary>
 
@@ -939,19 +952,23 @@ RouteMetric=100
 [IPv6AcceptRA]
 RouteMetric=100
 ```
+
 </details>
 
 ####  ⚙️ Option B — NetworkManager (Desktop-Friendly, Wi-Fi Ready)
+
 > 💡 Recommended if you plan to use KDE Plasma, GNOME, or need Wi-Fi support
 
 - 📦 Install NetworkManager
- ```bash
+
+```bash
 pacman -Syy networkmanager
 ```
 
 ### 🔌 Step 23 — Basic Packages: Bluetooth, Snapper, Pacman Cache Service, Reflector, Firewall
 
 - 📦 Install essential tools
+
 ```bash
 pacman -Syy bluez snapper pacman-contrib reflector firewalld
 ```
@@ -959,11 +976,13 @@ pacman -Syy bluez snapper pacman-contrib reflector firewalld
 ### 🕰️ Step 24 — Time Sync with French NTP Servers
 
 - ⏲️ Set systemd-timesyncd to use French pool servers with iburst
+
 ```bash
 nvim /etc/systemd/timesyncd.conf
 ```
 
 - Content:
+
 ```bash
 [Time]
 NTP=0.fr.pool.ntp.org 1.fr.pool.ntp.org 2.fr.pool.ntp.org 3.fr.pool.ntp.org
@@ -973,20 +992,24 @@ FallbackNTP=0.arch.pool.ntp.org 1.arch.pool.ntp.org 2.arch.pool.ntp.org 3.arch.p
 ### 🚀 Step 25 — I/O Scheduler Tuning for NVMe
 
 - 📉 Disable I/O scheduler on NVMe device to use none (for performance)
+
 ```bash
 nvim /etc/udev/rules.d/60-schedulers.rules
 ```
 
 - Content:
+
 ```bash
 ACTION=="add|change", KERNEL=="nvme[0-9]*", ENV{DEVTYPE}=="disk", ATTR{queue/scheduler}="none"
 ```
 
 ### 🧭 Step 26 — DNS Stub Resolver via systemd-resolved
+
 > ⚠️ Only apply this step if you are using *systemd-networkd* (from Step 23)
 > ⏭️ Skip this step if you selected *NetworkManager*
 
 - 🔁 Link stub resolver to `/etc/resolv.conf`
+
 ```bash
 ln -sf ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 ```
@@ -994,11 +1017,13 @@ ln -sf ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 ### 🌐 Step 27 — Reflector Configuration (Update Mirrorlist)
 
 - 🌍 Optimize pacman mirrors by age, country, and protocol
+
 ```bash
 nvim /etc/xdg/reflector/reflector.conf
 ```
 
 - Content:
+
 ```bash
 --save /etc/pacman.d/mirrorlist
 --country France,Germany,Netherlands
@@ -1012,37 +1037,44 @@ nvim /etc/xdg/reflector/reflector.conf
 - 🌐 Enable network services (based on your previous choice)
 
 - ⚙️ If using *systemd-networkd*:
+
 ```bash
 systemctl enable systemd-networkd.service
 systemctl enable systemd-resolved.service
 ```
 
 - 🖥️ If using *NetworkManager*:
+
 ```bash
 systemctl enable NetworkManager.service
 ```
 
 - 🔧 Enable essential system services
+
 ```bash
 systemctl enable bluetooth.service
 systemctl enable systemd-timesyncd.service
 ```
 
 - 🧱 Enable firewall service
+
 ```bash
 systemctl enable firewalld.service
 ```
 
 - 🧹 Enable maintenance timers (package cache cleaner & mirrorlist updater)
+
 ```bash
 systemctl enable paccache.timer
 systemctl enable reflector.timer
 ```
 
 - 🚫 Disable hibernation-related targets (not used / not supported in this setup)
+
 ```bash
 systemctl mask hibernate.target hybrid-sleep.target
 ```
+
 > This disables hibernation and hybrid sleep at the systemd level.
 > - Swap is encrypted with a non-persistent key, making hibernation unusable  
 > - It prevents any accidental suspend-to-disk attempts  
@@ -1053,17 +1085,20 @@ systemctl mask hibernate.target hybrid-sleep.target
 ### 🧰 Step 29 — Change System Editor and Visualiser
 
 - 📝 Define default system editor (used by system tools like systemctl edit, git, etc.)
+
 ```bash
 nvim /etc/environment
 ```
 
 - Content:
+
 ```bash
 EDITOR=nvim
 VISUAL=nvim
 ```
 
 - 🔄 Apply changes immediately (current shell)
+
 ```bash
 export EDITOR=nvim
 ```
@@ -1071,11 +1106,13 @@ export EDITOR=nvim
 ### 🔑 Step 30 — Configure sudo
 
 - 🛡️ Grant sudo to wheel group
+
 ```bash
 visudo
 ```
 
 - Content:
+
 ```bash
 %wheel ALL=(ALL:ALL) ALL
 ```
@@ -1083,11 +1120,13 @@ visudo
 ### 🚧 Step 31 — Compilation Optimization (makepkg)
 
 - 🧰 Tune makepkg flags for native arch, use /tmp for build
+
 ```bash
 nvim /etc/makepkg.conf
 ```
 
 - Content:
+
 ```bash
 CFLAGS="-march=native -O2 -pipe ..."
 MAKEFLAGS="-j$(nproc)"
@@ -1095,11 +1134,13 @@ BUILDDIR=/tmp/makepkg
 ```
 
 - 🦀 Optimize Rust build flags
+
 ```bash
 nvim /etc/makepkg.conf.d/rust.conf
 ```
 
 - Content:
+
 ```bash
 RUSTFLAGS="-C opt-level=2 -C target-cpu=native"
 ```
@@ -1107,11 +1148,13 @@ RUSTFLAGS="-C opt-level=2 -C target-cpu=native"
 ### 🔇 Step 32 — Disable HDMI Audio
 
 - 🔕 Blacklist HDMI audio module
+
 ```bash
 nvim /etc/modprobe.d/blacklist.conf
 ```
 
 - Content:
+
 ```bash
 blacklist snd_hda_intel
 ```
@@ -1119,11 +1162,13 @@ blacklist snd_hda_intel
 ### 🔒 Step 33 — Disable Webcam Microphone
 
 - 🎙️ Block Logitech webcam microphone via udev rule
+
 ```bash
 nvim /etc/udev/rules.d/90-blacklist-webcam-sound.rules
 ```
 
 - Content:
+
 ```bash
 SUBSYSTEM=="usb", DRIVER=="snd-usb-audio", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="085c", ATTR{authorized}="0"
 ```
@@ -1131,11 +1176,13 @@ SUBSYSTEM=="usb", DRIVER=="snd-usb-audio", ATTRS{idVendor}=="046d", ATTRS{idProd
 ### ⚡ Step 34 — Allow games Group to Read CPU Power
 
 - 🎮 Grant members of the games group permission to read CPU power (via Intel RAPL interface).
+
 ```bash
 nvim /etc/udev/rules.d/70-intel-rapl.rules
 ```
 
 - Content:
+
 ```bash
 SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", RUN+="/usr/bin/chgrp games /sys/%p/energy_uj", RUN+="/usr/bin/chmod g+r /sys/%p/energy_uj"
 ```
@@ -1145,6 +1192,7 @@ SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", RUN+="/usr/bin/chgrp games /sys/%
 ### 🔐 Step 35 — Set Root Password
 
 - 🔑 Set root password
+
 ```bash
 passwd root
 ```
@@ -1152,6 +1200,7 @@ passwd root
 ### 🚪 Step 36 — Exit chroot, Unmount, Reboot into Firmware Setup
 
 - 👋 Exit chroot, unmount and reboot into UEFI/BIOS to check if Secure Boot is enabled
+
 ```bash
 exit
 umount -R /mnt
@@ -1161,13 +1210,15 @@ systemctl reboot --firmware-setup
 ### 🛡️ Step 37 — LUKS TPM2 Key Enrollment
 
 - 🔒 Enroll TPM2 key (PCR 0 = firmware, PCR 7 = Secure Boot state)
+
 ```bash
 systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme0n1p2
 ```
 
-### Step 38 — 🎮 Shared games directory (multi-user Steam library)
+### 🎮 Step 38 — Shared games directory (multi-user Steam library)
 
 - 🕹️ Allow access and inheritance for users in the `games` group via ACL
+
 ```bash
 chown root:games /opt/games
 chmod 2775 /opt/games
@@ -1177,42 +1228,50 @@ setfacl -dm g:games:rwx /opt/games
 ### 🧩 Step 39 — Configure Snapper after Reboot
 
 - 🔌 Unmount the default /.snapshots subvolume
+
 ```bash
 umount /.snapshots
 ```
 
 - 🗑️ Delete it to avoid conflicts with our custom mount
+
 ```bash
 rm -r /.snapshots
 ```
 
 - 🛠️ Initialize Snapper for root filesystem
+
 ```bash
 snapper -c root create-config /
 ```
 
 - ❌ Delete the subvolume Snapper just created (we’ll remount it ourselves)
+
 ```bash
 btrfs subvolume delete /.snapshots
 ```
 
 - 📂 Recreate the mount point and mount it
+
 ```bash
 mkdir /.snapshots
 mount /.snapshots
 ```
 
 - 🔐 Secure the directory
+
 ```bash
 chmod 750 /.snapshots
 ```
 
 - 📝 Configure Snapper snapshot settings
+
 ```bash
 nvim /etc/snapper/configs/root
 ```
 
 - Content:
+
 ```bash
 TIMELINE_CREATE="yes"
 TIMELINE_CLEANUP="yes"
@@ -1232,6 +1291,7 @@ TIMELINE_LIMIT_YEARLY="0"
 ### 🛡️ Step 40 — Custom Pacman Hook to Backup /efi
 
 - 🪝 Create a hook to automatically backup /efi before critical updates
+
 ```bash
 nvim /etc/pacman.d/hooks/10-efi_backup.hook
 ```
@@ -1273,6 +1333,7 @@ Exec = /usr/local/sbin/efi_backup.sh
 </details>
 
 - ✍️ Create the backup script
+
 ```bash
 nvim /usr/local/sbin/efi_backup.sh
 ```
@@ -1284,33 +1345,50 @@ nvim /usr/local/sbin/efi_backup.sh
 
 ```bash
 #!/bin/bash
+
 ## SCRIPT EFI BACKUP
 ## /usr/local/sbin/efi_backup.sh
 
-tar -czf "/.efibackup/efi-$(date +%Y%m%d-%H%M%S).tar.gz" -C / efi
-ls -1t /.efibackup/efi-*.tar.gz | tail -n +4 | xargs -r rm --
+set -e
+
+BACKUP_DIR="/.efibackup"
+BACKUP_COUNT=3
+
+if [ ! -d "$BACKUP_DIR" ]; then
+    mkdir -p "$BACKUP_DIR"
+fi
+
+if tar -czf "$BACKUP_DIR/efi-$(date +%Y%m%d-%H%M%S).tar.gz" -C / efi; then
+    ls -1t "$BACKUP_DIR"/efi-*.tar.gz | \
+        tail -n +$((BACKUP_COUNT + 1)) | \
+        xargs -r rm --
+fi
 ```
 
 </details>
 
 - ✅ Make it executable
+
 ```bash
-chmod +x /usr/local/sbin/efi_backup.sh
+chmod 750 /usr/local/sbin/efi_backup.sh
 ```
 
 ### ⏲️ Step 41 — Enable Maintenance Timers
 
 - 🕒 Enable regular TRIM
+
 ```bash
 systemctl enable fstrim.timer
 ```
 
 - 📸 Enable automatic timeline snapshots
+
 ```bash
 systemctl enable snapper-timeline.timer
 ```
 
 - 🧼 Enable automatic snapshot cleanup
+
 ```bash
 systemctl enable snapper-cleanup.timer
 ```
@@ -1318,6 +1396,7 @@ systemctl enable snapper-cleanup.timer
 ### 🧷 Step 42 — Enable Pacman Transaction Snapshots
 
 - 🧩 Install snap-pac to snapshot before and after pacman operations
+
 ```bash
 pacman -S snap-pac
 ```
@@ -1325,11 +1404,13 @@ pacman -S snap-pac
 ### 🗑️ Step 43 — Clean Snapper Initial Snapshots Manually
 
 - 📋 List snapshots (🔍)
+
 ```bash
 snapper -c root list
 ```
 
 - 🧹 Delete a range of snapshots (e.g., snapshots 1 to 2)
+
 ```bash
 snapper -c root delete 1-2
 ```
@@ -1337,6 +1418,7 @@ snapper -c root delete 1-2
 ### 📸 Step 44 — Take Initial System Snapshot
 
 - 🧊 Manually create the first system snapshot after full setup
+
 ```bash
 snapper -c root create -d "init"
 ```

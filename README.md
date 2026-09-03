@@ -256,18 +256,18 @@ Boot process:
 
 | 📍 Mount Point | 💽 Device | 🗂️ Subvolumes | ⚙️ Mount Options |
 |---|---|---|---|
-| `/` | `/dev/mapper/cryptarch` | `@` | `rw,noatime,compress=zstd:3,ssd,discard=async` |
+| `/` | `/dev/mapper/cryptarch` | `@` | `rw,noatime,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/efi` | `/dev/nvme0n1p1` | *(N/A)* | `rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022` |
-| `/.swap` | `/dev/mapper/cryptarch` | `@swap` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async` |
-| `/.snapshots` | `/dev/mapper/cryptarch` | `@snapshots` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async` |
-| `/.efibackup` | `/dev/mapper/cryptarch` | `@efibck` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async` |
-| `/var/log` | `/dev/mapper/cryptarch` | `@log` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async` |
-| `/var/tmp` | `/dev/mapper/cryptarch` | `@tmp` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async` |
-| `/var/cache` | `/dev/mapper/cryptarch` | `@cache` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async` |
-| `/var/lib/libvirt/images` | `/dev/mapper/cryptarch` | `@virt` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async` |
-| `/home` | `/dev/mapper/cryptarch` | `@home` | `rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async` |
-| `/srv` | `/dev/mapper/cryptarch` | `@srv` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async` |
-| `/opt/games` | `/dev/mapper/cryptarch` | `@games` | `rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async` |
+| `/.swap` | `/dev/mapper/cryptarch` | `@swap` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/.snapshots` | `/dev/mapper/cryptarch` | `@snapshots` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/.efibackup` | `/dev/mapper/cryptarch` | `@efibck` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/var/log` | `/dev/mapper/cryptarch` | `@log` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/var/tmp` | `/dev/mapper/cryptarch` | `@tmp` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/var/cache` | `/dev/mapper/cryptarch` | `@cache` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/var/lib/libvirt/images` | `/dev/mapper/cryptarch` | `@virt` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/home` | `/dev/mapper/cryptarch` | `@home` | `rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/srv` | `/dev/mapper/cryptarch` | `@srv` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/opt/games` | `/dev/mapper/cryptarch` | `@games` | `rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120` |
 
 ---
 
@@ -277,17 +277,26 @@ Boot process:
 |---|---|---|
 | `rw` | Mount as read-write. | 🔧 Default |
 | `noatime` | Do not update file access times, reducing unnecessary filesystem I/O and SSD writes. | 🚀 Performance |
-| `nodev` | Prevents character/block device files from being interpreted (security hardening). | 🔒 Security |
+| `nodev` | Prevent character/block device files from being interpreted (security hardening). | 🔒 Security |
 | `nosuid` | Disable set-user-ID and set-group-ID bits (security hardening). | 🔒 Security |
 | `noexec` | Prevent execution of binaries on this mount (security hardening). | 🔒 Security |
 | `fmask=0022` | File mask for default file permissions on FAT32 (755 for files). | 🔒 Security |
-| `dmask=0022` | Directory mask for default directory permissions on FAT32 (755 for dirs). | 🔒 Security |
-| `compress=zstd:3` | Use Zstandard compression (level 3: good balance between speed and compression ratio). | 💾 Performance/Storage |
-| `ssd` | Optimize for SSD/NVMe storage. | 🚀 Performance |
-| `discard=async` | Asynchronous TRIM: notify the SSD of freed blocks asynchronously with reduced I/O overhead. | 💾 Performance |
+| `dmask=0022` | Directory mask for default directory permissions on FAT32 (755 for directories). | 🔒 Security |
+| `compress=zstd:3` | Use Zstandard compression at level 3, providing a good balance between compression ratio, CPU usage and performance. | 💾 Performance/Storage |
+| `ssd` | Enable BTRFS SSD-specific behavior for SSD/NVMe storage. | 🚀 Performance |
+| `discard=async` | Process TRIM/discard operations asynchronously, reducing the performance impact of synchronous discard operations. | 💾 Performance |
+| `commit=120` | Set the maximum periodic BTRFS transaction commit interval to 120 seconds, allowing more filesystem changes to be grouped into fewer transaction commits. This can reduce commit-related I/O, metadata activity and unnecessary flash writes. | 💾 Performance/Endurance |
 | `subvol=@...` | Mount a specific BTRFS subvolume. | 📂 BTRFS Feature |
 
-> 💡 **Defaults options:** `noatime` already implies `nodiratime`, so specifying both is redundant. In addition, `space_cache=v2` is the default BTRFS space cache implementation on modern kernels and does not need to be explicitly specified in the mount options.
+> 💡 **Default options:** `noatime` already implies `nodiratime`, so specifying both is redundant. In addition, `space_cache=v2` is the default BTRFS space cache implementation on modern kernels and does not need to be explicitly specified in the mount options.
+>
+> ⚠️ About commit=120: BTRFS normally uses a shorter periodic transaction commit interval. Setting commit=120 increases the maximum interval to 120 seconds, allowing more filesystem changes to be grouped into fewer transaction commits. This can reduce commit-related I/O and metadata activity and may help reduce write amplification and unnecessary flash writes on SSD/NVMe storage. As a result, it may provide a small benefit to storage endurance while also reducing filesystem I/O overhead.
+>
+> However, commit=120 does not mean that all filesystem writes remain only in memory for 120 seconds. Applications can explicitly request that data be synchronized to persistent storage using mechanisms such as fsync() or fdatasync(), and BTRFS may also persist data or commit transactions earlier when required. BTRFS can additionally use its tree-log mechanism to make certain fsync() operations durable without requiring a full transaction commit.
+>
+> The trade-off is therefore a potentially larger window for some recent unsynchronized changes to be lost in the event of a sudden power failure or system crash. Data that has already been explicitly synchronized may still be safely persisted even if the current BTRFS transaction has not yet reached its periodic commit interval.
+>
+> This setting does not disable BTRFS copy-on-write or its filesystem consistency mechanisms. It changes the maximum periodic transaction commit interval rather than simply delaying every disk write for 120 seconds.
 
 ---
 
@@ -295,10 +304,10 @@ Boot process:
 
 These options are carefully chosen for:
 
-- 🚀 **Performance**: optimize SSD/NVMe usage and reduce unnecessary filesystem I/O with `noatime`, `ssd` and asynchronous discard.
+- 🚀 **Performance**: optimize SSD/NVMe usage and reduce unnecessary filesystem I/O with `noatime`, `ssd`, `discard=async` and a longer `commit=120` transaction interval.
 - 🗜️ **Compression**: use transparent **Zstandard compression** with `compress=zstd:3` to reduce disk usage and I/O while maintaining low CPU overhead.
 - 🔒 **Security**: apply `nodev`, `nosuid` and `noexec` only where they make sense, according to the purpose of each subvolume.
-- 🛡️ **Reliability**: use BTRFS features such as asynchronous discard to provide a balanced approach between performance, endurance and filesystem reliability.
+- 🛡️ **Reliability**: rely on BTRFS copy-on-write and filesystem consistency mechanisms while using asynchronous discard and controlled transaction commits.
 - 📸 **Snapshot efficiency**: isolate frequently changing or non-system data such as logs, cache, temporary files, VM images and game libraries from the `@` root subvolume.
 - 🔄 **System recovery**: keep the complete system state inside `@`, allowing `snapper` to create consistent system snapshots and restore the system after failed updates.
 - 🎮 **Game preservation**: isolate `/opt/games` in its own BTRFS subvolume, allowing Steam and standalone game libraries to be preserved and reused independently of the operating system during a reinstall.
@@ -311,9 +320,10 @@ These options are carefully chosen for:
 | 🎯 Aspect | ⚙️ Strategy |
 |---|---|
 | SSD/NVMe optimization | `ssd`, `discard=async` |
-| Reduce unnecessary writes | `noatime` |
+| Reduce unnecessary writes | `noatime`, `commit=120` |
 | Compression | `compress=zstd:3` |
 | Security hardening | `nosuid`, `nodev`, `noexec` where appropriate |
+| Transaction commit interval | `commit=120` |
 | Filesystem management | BTRFS subvolumes |
 | Snapshot management | `@` root subvolume managed by `snapper` |
 | System rollback | BTRFS snapshots of `@` |
@@ -475,7 +485,7 @@ mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@efibck /dev/mapper/cryptarch /mnt/.efibackup
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@log /dev/mapper/cryptarch /mnt/var/log
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@tmp /dev/mapper/cryptarch /mnt/var/tmp
-mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@cache /dev/mapper/cryptarch /mnt/var/cache/pacman/pkg
+mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@cache /dev/mapper/cryptarch /mnt/var/cache
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@virt /dev/mapper/cryptarch /mnt/var/lib/libvirt/images
 mount -o rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120,subvol=@home /dev/mapper/cryptarch /mnt/home
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@srv /dev/mapper/cryptarch /mnt/srv
@@ -502,8 +512,7 @@ chmod 600 /mnt/.swap/swapfile
 - 🧱 Install base packages, kernel + firmwares, EFI tools, btrfs support, text editor, secure boot tools, splash screen and zRam generator service
 
 ```bash
-pacstrap /mnt \
-  base base-devel linux linux-headers linux-firmware amd-ucode neovim efibootmgr btrfs-progs sbctl plymouth zram-generator
+pacstrap /mnt base base-devel linux linux-headers linux-firmware amd-ucode neovim efibootmgr btrfs-progs sbctl plymouth zram-generator
 ```
 
 > 💡 `base-devel` is required for building packages from the AUR or compiling software from source, and `linux-headers` is needed for DKMS to build and maintain kernel modules.

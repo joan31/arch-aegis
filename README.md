@@ -23,6 +23,7 @@
 The project favors a minimal and coherent design where each component has a clearly defined purpose, with particular attention to **system integrity, predictable boot behavior, maintainability and recovery after failure**.
 
 > 🛡️ **Aegis** — A system designed not only to run securely, but to recover cleanly when something goes wrong.
+
 > 🛡️ Built on: **EFI**, **UKI**, **LUKS2 + TPM2**, **Secure Boot**, **BTRFS**, **Systemd init**, **zRAM**, **snapper**
 
 ---
@@ -68,9 +69,9 @@ Designed around **security, reliability, simplicity and system recovery**, it co
 ## ⚙️ Features
 
 ### 🔐 Security
-- Full `/` system encryption with **LUKS2 + TPM2**
+- Encrypted BTRFS system volume with **LUKS2 + TPM2**
 - Fallback passphrase support
-- Secure Boot ready with signed kernels
+- **Secure Boot** enabled with custom enrolled keys
 - Boot chain based on **signed Unified Kernel Images**
 
 ### 🧊 Filesystem
@@ -978,7 +979,7 @@ ACTION=="add|change", KERNEL=="nvme[0-9]*", ENV{DEVTYPE}=="disk", ATTR{queue/sch
 
 ### 🧭 Step 26 — DNS Stub Resolver via systemd-resolved
 
-> ⚠️ Only apply this step if you are using *systemd-networkd* (from Step 23)
+> ⚠️ Only apply this step if you are using *systemd-networkd* (from Step 22)
 > ⏭️ Skip this step if you selected *NetworkManager*
 
 - 🔁 Link stub resolver to `/etc/resolv.conf`
@@ -1055,7 +1056,7 @@ systemctl mask hibernate.target hybrid-sleep.target
 >  
 > 💡 On KDE Plasma, this also removes the hibernation option from the power menu, making it cleaner and less confusing.
 
-### 🧰 Step 29 — Change System Editor and Visualiser
+### 🧰 Step 29 — Configure Default System Editors
 
 - 📝 Define default system editor (used by system tools like systemctl edit, git, etc.)
 
@@ -1438,4 +1439,4 @@ Feel free to use, modify, and share!
 
 Crafted with ❤️ by [joan31](https://github.com/joan31)
 
-> _"Build it clean. Build it solid. Fortress-grade Arch Linux."_
+> _"Build it clean. Secure it by design. Recover it with confidence."_

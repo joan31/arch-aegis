@@ -52,7 +52,7 @@ Built upon the foundations of the original 🏰 **Arch Fortress** project and re
 Designed around **security, reliability, simplicity and system recovery**, it combines modern security technologies with **BTRFS snapshot capabilities** to provide multiple layers of protection against system and kernel-related failures.
 
 - 🧊 **BTRFS** with a carefully designed subvolume layout and **snapper** for system snapshots and rollback
-- 🔐 **LUKS2** full-disk encryption with **TPM2** auto-unlocking and passphrase fallback
+- 🔐 **LUKS2** encrypted system volume with **TPM2** auto-unlocking and passphrase fallback
 - 🚀 **Direct EFI boot** using a signed **Unified Kernel Image (UKI)** — no traditional bootloader required
 - 💥 Full **Secure Boot** support
 - 🧠 Modern `mkinitcpio` using **systemd init hooks**
@@ -683,7 +683,7 @@ nvim /etc/hosts
 >
 > In this case, a minimal and portable configuration is recommended:
 >
-> ```text
+> ```bash
 > 127.0.0.1      localhost
 > ::1            localhost
 > 127.0.1.1      laptop
@@ -705,6 +705,104 @@ ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
 
 ```bash
 hwclock --systohc
+```
+
+### 🧠 Step 14 — Initramfs Configuration
+
+- ⚙️ Configure `mkinitcpio` to use the systemd-based initramfs and required early-boot components
+
+```bash
+nvim /etc/mkinitcpio.conf
+```
+
+- Content:
+
+```bash
+MODULES=(amdgpu)
+
+HOOKS=(systemd plymouth autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems sd-shutdown)
+```
+
+> 💡 **Why is the `fsck` hook not included?**
+>
+> Arch Aegis intentionally relies on the **systemd-based filesystem check mechanism** rather than the `mkinitcpio` `fsck` hook.
+>
+> There are two possible filesystem check mechanisms during the boot process:
+>
+> 1. The `mkinitcpio` `fsck` hook can check the root filesystem directly from the initramfs before mounting it.
+> 2. Systemd can perform filesystem checks according to the `fs_passno` values defined in `/etc/fstab`.
+>
+> Arch Aegis uses the second approach. The `fsck` hook is therefore omitted from `mkinitcpio.conf`, and the root filesystem is initially mounted read-only using the `ro` kernel parameter. Systemd can then handle filesystem checks according to the configuration defined in `/etc/fstab`.
+>
+> The root filesystem uses **BTRFS**, which does not require the traditional boot-time `fsck` workflow. According to the `fsck.btrfs` documentation, BTRFS filesystems should use an `fs_passno` value of `0`. BTRFS provides its own integrity mechanisms and dedicated maintenance and diagnostic tools such as `btrfs scrub` and `btrfs check`.
+>
+> The **FAT32 EFI System Partition (`/efi`)**, however, uses an `fs_passno` value of `2`, allowing systemd to check it with the appropriate FAT filesystem checker during the normal boot process.
+>
+> The resulting filesystem check strategy is therefore:
+>
+> - **BTRFS filesystems → `0 0`** — excluded from the traditional `fsck` workflow.
+> - **FAT32 EFI System Partition → `0 2`** — checked by systemd when required.
+> - **No `fsck` mkinitcpio hook** — filesystem checks are handled through the systemd-based mechanism.
+> - **`ro` kernel parameter** — the root filesystem is initially mounted read-only as required by this workflow.
+>
+> ⚠️ The kernel parameter `fsck.mode=skip` is intentionally **not used**, as it would disable filesystem checks entirely. This would also prevent the FAT32 EFI System Partition from being checked through the systemd-based mechanism.
+>
+> This keeps the initramfs focused on the components actually required for early boot while applying the appropriate filesystem check strategy to each filesystem type.
+
+- 🔐 Configure the encrypted root volume for early userspace
+
+```bash
+nvim /etc/crypttab.initramfs
+```
+
+- Content:
+
+```bash
+cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard
+```
+
+- Get `<NVME-UUID>` directly from Neovim:
+
+```bash
+:read ! lsblk -dno UUID /dev/nvme0n1p2
+```
+
+### 🧵 Step 15 — Kernel Command Line Configuration
+
+- ⚙️ Configure root filesystem and boot logging options
+
+```bash
+nvim /etc/cmdline.d/01-root.conf
+```
+
+- Content:
+
+```text
+root=/dev/mapper/cryptarch rootfstype=btrfs rootflags=subvol=@ ro loglevel=3 quiet
+```
+
+> 💡 **Why `ro`?**
+>
+> The `ro` kernel parameter initially mounts the root filesystem read-only during early boot. This is required by the **systemd-based filesystem check workflow** selected in the previous step.
+>
+> Systemd can then process filesystem checks according to the `fs_passno` values defined in `/etc/fstab` before the filesystems are mounted or remounted read-write.
+>
+> In Arch Aegis, BTRFS filesystems use `fs_passno=0` and are therefore excluded from the traditional `fsck` workflow, while the FAT32 EFI System Partition uses `fs_passno=2` and can be checked by systemd.
+>
+> The root filesystem is subsequently remounted read-write according to its `/etc/fstab` mount options.
+
+> 💡 The `splash` parameter is intentionally omitted because Plymouth is used to provide the boot splash screen. If you want to use the splash screen provided by the `mkinitcpio` preset configured in the following step, you can add `splash` here.
+
+- 🧠 Disable kernel zswap to avoid duplicate swap compression when using zRAM as the primary swap device
+
+```bash
+nvim /etc/cmdline.d/02-zswap.conf
+```
+
+- Content:
+
+```text
+zswap.enabled=0
 ```
 
 > 💡 This synchronizes the hardware clock with the configured system time.
@@ -892,10 +990,10 @@ Include = /etc/pacman.d/mirrorlist
 ### 🌐 Step 22 — Network Configuration
 
 > 🔀 Choose one network management method depending on your setup
-> - ⚙️ `systemd-networkd` → lightweight, minimal, server-friendly, wired only
-> - 🖥️ `NetworkManager` → recommended for desktop environments (e.g. KDE Plasma, GNOME) with Wi-Fi support
+- ⚙️ `systemd-networkd` → lightweight, minimal and server-friendly — configured for wired networking in this guide
+- 🖥️ `NetworkManager` → recommended for desktop environments (e.g. KDE Plasma, GNOME) and Wi-Fi
 
-####  ⚙️ Option A — systemd-networkd (Only Wired, Minimal & Lightweight)
+#### ⚙️ Option A — systemd-networkd (Wired Setup — Minimal & Lightweight)
 
 - 📡 Configure wired interface for DHCP, mDNS, and IPv6
 
@@ -1074,7 +1172,7 @@ VISUAL=nvim
 - 🔄 Apply changes immediately (current shell)
 
 ```bash
-export EDITOR=nvim
+export EDITOR=nvim VISUAL=nvim
 ```
 
 ### 🔑 Step 30 — Configure sudo

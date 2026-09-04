@@ -535,7 +535,7 @@ cat /mnt/etc/fstab
 
 ```bash
 UUID=<BTRFS-UUID-PARTITION>      /       btrfs      rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=/@      0 0
-UUID=<EFI-UUID-PARTITION>        /efi    vfat       rw,noatime,nodev,nosuid,noexec,discard,fmask=0022,dmask=0022         0 2
+UUID=<EFI-UUID-PARTITION>        /efi    vfat       rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022                   0 2
 ```
 
 > 💡 **Why `0 0` for BTRFS and `0 2` for the EFI System Partition?**

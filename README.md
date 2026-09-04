@@ -18,12 +18,11 @@
   <img src="assets/arch-aegis-readme.png" alt="Arch Aegis">
 </p>
 
-**Arch Aegis** is a modern, security-focused Arch Linux installation guide designed for users who value **security, reliability, simplicity and system recovery**.
+**Arch Aegis** is a reference architecture and step-by-step installation guide for building a **secure, resilient and recoverable Arch Linux system**.
 
-Built upon the foundations of the original **Arch Fortress** project and refined through the experience gained with **Arch Fortress: Reforged**, this guide represents a more mature and carefully engineered approach to building a **robust, predictable and recoverable Arch Linux system**.
+The project favors a minimal and coherent design where each component has a clearly defined purpose, with particular attention to **system integrity, predictable boot behavior, maintainability and recovery after failure**.
 
-Rather than chasing every available feature, Arch Aegis focuses on a **minimal and coherent system architecture**, combining proven technologies with modern security and recovery mechanisms. It adopts **BTRFS** for its advanced snapshot capabilities and integrates them into a system designed to provide reliable recovery alongside **Unified Kernel Images (UKI)**, **LUKS2 with TPM2**, and **Secure Boot**.
-
+> 🛡️ **Aegis** — A system designed not only to run securely, but to recover cleanly when something goes wrong.
 > 🛡️ Built on: **EFI**, **UKI**, **LUKS2 + TPM2**, **Secure Boot**, **BTRFS**, **Systemd init**, **zRAM**, **snapper**
 
 ---
@@ -124,7 +123,7 @@ Designed around **security, reliability, simplicity and system recovery**, it co
 - Provides an additional recovery layer in case of EFI or UKI-related issues
 
 ### 🔄 System Recovery
-- **BTRFS snapshots of `@`** provide restore points for the complete system
+- **BTRFS snapshots of `@`** provide restore points for the complete system state contained within the root subvolume
 - **Fallback UKI** provides a generic bootable recovery environment
 - **EFI backups** allow restoration of previous EFI and UKI states
 - The combination of these layers provides a recovery path for failed kernel or system updates
@@ -794,7 +793,7 @@ rm /boot/initramfs-*.img
 >
 > These leftover images can therefore be safely removed.
 
-## 💻 Step 18 — EFI Boot Entry
+### 💻 Step 18 — EFI Boot Entry
 
 - 🧷 Register UKI with UEFI firmware
 
@@ -809,7 +808,7 @@ efibootmgr --create --disk /dev/nvme0n1 --part 1 --label "Arch Linux Fallback" -
 efibootmgr -o 0000,0001
 ```
 
-#### 🧠 Step 19 — zRam Setup
+### 🧠 Step 19 — zRam Setup
 
 - ⚙️ Configure zRam swap device (primary in-memory compressed swap)
 
@@ -1353,7 +1352,9 @@ chmod 750 /usr/local/sbin/efi_backup.sh
 
 ### ⏲️ Step 41 — Enable Maintenance Timers
 
-- 🕒 Enable regular TRIM
+- 🕒 Enable periodic TRIM for SSD/NVMe storage
+
+> 💡 `fstrim.timer` provides periodic TRIM for mounted filesystems that support it. BTRFS additionally uses `discard=async` in this configuration, while continuous `discard` is intentionally not enabled on the FAT32 EFI System Partition.
 
 ```bash
 systemctl enable fstrim.timer

@@ -1,4 +1,6 @@
-# 🛡️ Arch Aegis — Secure & Resilient Arch Linux Installation Guide : A Modern, Secure & Minimal Arch Linux Installation Guide focused on Security, Reliability, Simplicity and System Recovery
+# 🛡️ Arch Aegis — Secure & Resilient Arch Linux
+
+> A modern and minimal Arch Linux installation guide focused on security, reliability, simplicity and system recovery.
 
 ![Linux](https://img.shields.io/badge/OS-Linux-black?style=flat-square&logo=linux&logoColor=white)
 ![Arch Linux](https://img.shields.io/badge/Distro-Arch-blue?style=flat-square&logo=arch-linux)
@@ -31,7 +33,7 @@ Rather than chasing every available feature, Arch Aegis focuses on a **minimal a
 - [🎯 Overview](#-overview)
 - [⚙️ Features](#️-features)
 - [📦 Project Structure](#-project-structure)
-- [🗂️ Disk Layout & LVM Architecture](#️-disk-layout--lvm-architecture)
+- [🗂️ Disk Layout & Subvolume Architecture](#️-disk-layout--subvolume-architecture)
 - [🔧 Mount Options Summary](#-mount-options-summary)
 - [📖 Manual Installation (Step-by-step)](#-manual-installation-step-by-step)
 - [❓ FAQ](#-faq)
@@ -257,7 +259,7 @@ Boot process:
 | 📍 Mount Point | 💽 Device | 🗂️ Subvolumes | ⚙️ Mount Options |
 |---|---|---|---|
 | `/` | `/dev/mapper/cryptarch` | `@` | `rw,noatime,compress=zstd:3,ssd,discard=async,commit=120` |
-| `/efi` | `/dev/nvme0n1p1` | *(N/A)* | `rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022` |
+| `/efi` | `/dev/nvme0n1p1` | *(N/A)* | `rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022,discard` |
 | `/.swap` | `/dev/mapper/cryptarch` | `@swap` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/.snapshots` | `/dev/mapper/cryptarch` | `@snapshots` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/.efibackup` | `/dev/mapper/cryptarch` | `@efibck` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
@@ -335,7 +337,7 @@ These options are carefully chosen for:
 
 ---
 
-**✅ READY FOR PRODUCTION 🖥️**
+**✅ READY FOR DAILY USE 🖥️**
 
 ---
 
@@ -473,8 +475,7 @@ mkdir -p /mnt/{efi,.swap,.snapshots,.efibackup,var/{log,tmp,cache,lib/libvirt/im
 - 🖥️ Mount EFI system partition (read-only, noexec for safety)
 
 ```bash
-mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022 \
-  /dev/nvme0n1p1 /mnt/efi
+mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022,discard /dev/nvme0n1p1 /mnt/efi
 ```
 
 - 🧷 Mount other BTRFS subvolumes
@@ -975,7 +976,7 @@ RouteMetric=100
 - 📦 Install NetworkManager
 
 ```bash
-pacman -Syy networkmanager
+pacman -S networkmanager
 ```
 
 ### 🔌 Step 23 — Basic Packages: Bluetooth, Snapper, Pacman Cache Service, Reflector, Firewall
@@ -983,7 +984,7 @@ pacman -Syy networkmanager
 - 📦 Install essential tools
 
 ```bash
-pacman -Syy bluez snapper pacman-contrib reflector firewalld
+pacman -S bluez snapper pacman-contrib reflector firewalld
 ```
 
 ### 🕰️ Step 24 — Time Sync with French NTP Servers

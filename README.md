@@ -259,7 +259,7 @@ Boot process:
 | 📍 Mount Point | 💽 Device | 🗂️ Subvolumes | ⚙️ Mount Options |
 |---|---|---|---|
 | `/` | `/dev/mapper/cryptarch` | `@` | `rw,noatime,compress=zstd:3,ssd,discard=async,commit=120` |
-| `/efi` | `/dev/nvme0n1p1` | *(N/A)* | `rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022,discard` |
+| `/efi` | `/dev/nvme0n1p1` | *(N/A)* | `rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022` |
 | `/.swap` | `/dev/mapper/cryptarch` | `@swap` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/.snapshots` | `/dev/mapper/cryptarch` | `@snapshots` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/.efibackup` | `/dev/mapper/cryptarch` | `@efibck` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
@@ -462,8 +462,7 @@ umount /mnt
 - 🔧 Mount root subvolume
 
 ```bash
-mount -o rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=@ \
-  /dev/mapper/cryptarch /mnt
+mount -o rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=@ /dev/mapper/cryptarch /mnt
 ```
 
 - 🗂️ Create necessary mount points
@@ -475,7 +474,7 @@ mkdir -p /mnt/{efi,.swap,.snapshots,.efibackup,var/{log,tmp,cache,lib/libvirt/im
 - 🖥️ Mount EFI system partition (read-only, noexec for safety)
 
 ```bash
-mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022,discard /dev/nvme0n1p1 /mnt/efi
+mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022 /dev/nvme0n1p1 /mnt/efi
 ```
 
 - 🧷 Mount other BTRFS subvolumes
@@ -520,35 +519,44 @@ pacstrap /mnt base base-devel linux linux-headers linux-firmware amd-ucode neovi
 
 ### 🗂️ Step 8 — Generate fstab
 
-- 📄 Generate fstab with UUIDs
+- 📄 Generate `fstab` with UUIDs
 
 ```bash
 genfstab -U /mnt >> /mnt/etc/fstab
 ```
 
-- 🔍 (Optional) Review fstab and check "0 1" to enable fsck on `/`
+- 🔍 Review the generated `fstab` and verify the filesystem check values
 
 ```bash
 cat /mnt/etc/fstab
 ```
 
-- Content:
+- Ensure that all **BTRFS** filesystems use `0 0`, while the **EFI System Partition (FAT32)** uses `0 2`:
 
 ```bash
-UUID=<BTRFS-UUID-PARTITION>      /      btrfs      rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=/@      0 1
+UUID=<BTRFS-UUID-PARTITION>      /       btrfs      rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=/@      0 0
+UUID=<EFI-UUID-PARTITION>        /efi    vfat       rw,noatime,nodev,nosuid,noexec,discard,fmask=0022,dmask=0022         0 2
 ```
 
-> 💡 **Note:** The first value controls the legacy `dump` backup utility and is normally set to `0`. The second value controls the order in which filesystems are checked by `fsck`: `1` for the root filesystem and `2` for other filesystems.
+> 💡 **Why `0 0` for BTRFS and `0 2` for the EFI System Partition?**
+>
+> BTRFS does not require the traditional boot-time filesystem check workflow used by filesystems such as Ext4 or FAT. According to the `fsck.btrfs` documentation, the `fs_passno` field should therefore be set to `0` for BTRFS filesystems.
+>
+> The EFI System Partition, however, uses **FAT32/VFAT** and can be checked with `fsck.fat`. Setting its `fs_passno` value to `2` allows the system to perform the appropriate filesystem check when required.
+>
+> Since `/efi` is not the root filesystem, it uses `2` rather than `1`. The value `1` is traditionally reserved for a root filesystem that requires an `fsck` check before other filesystems.
 
-> 📝 `fstab` uses the last two fields to control `dump` and filesystem checks:
+> 📝 **`fstab` uses the last two fields to control `dump` and filesystem checks:**
 >
 > | Value | 🔎 Description |
 > |-------|----------------|
-> | `0 0` | 🚫 Disable `dump` and do not check the filesystem automatically with `fsck`. |
-> | `0 1` | 💾 Disable `dump` and check the filesystem first with `fsck` — used for `/`. |
-> | `0 2` | 💾 Disable `dump` and check the filesystem after `/` — used for other filesystems. |
+> | `0 0` | 🚫 Disable `dump` and do not schedule an automatic filesystem check through the traditional `fsck` workflow. Used for BTRFS filesystems in Arch Aegis. |
+> | `0 1` | 💾 Disable `dump` and give the filesystem the highest check priority. Traditionally used for a root filesystem requiring `fsck`. |
+> | `0 2` | 💾 Disable `dump` and check the filesystem after filesystems with priority `1`. Used here for the FAT32 EFI System Partition. |
 
-> 🔐 The `UUID=<...>` values above are placeholders. `genfstab` will automatically generate the correct UUID entries for the mounted filesystems. Review the generated file and verify that the mount options and filesystem check values are correct before continuing.
+> 🔐 The `UUID=<...>` values above are placeholders. `genfstab` will automatically generate the correct UUID entries for the mounted filesystems.
+>
+> Review the generated file before continuing and ensure that **all BTRFS entries end with `0 0`** and that the **FAT32 EFI System Partition ends with `0 2`**.
 
 ### 🚪 Step 9 — Enter Chroot
 
@@ -661,6 +669,30 @@ nvim /etc/hosts
 192.168.1.101  lianli-arch.zenitram lianli-arch
 ```
 
+> 💡 **Note:** The hostname, domain name and local IP address shown above are examples based on the Arch Aegis reference installation.
+>
+> These values should be adapted to your own system and network environment:
+>
+> - `lianli-arch` → replace with your preferred **hostname**.
+> - `zenitram` → replace with your own **local domain name**, if you use one.
+> - `192.168.1.101` → replace with the **static or reserved IP address** assigned to your machine on your local network.
+>
+> The `localhost` entries (`127.0.0.1` and `::1`) should remain unchanged.
+>
+> 💻 **For laptops or mobile systems:** avoid hardcoding a local domain name or LAN IP address in `/etc/hosts` if the machine is expected to connect to different networks. The IP address and local network domain may change depending on the DHCP/DNS configuration of each network.
+>
+> In this case, a minimal and portable configuration is recommended:
+>
+> ```text
+> 127.0.0.1      localhost
+> ::1            localhost
+> 127.0.1.1      laptop
+> ```
+>
+> The hostname remains part of the machine's identity, while network-specific parameters such as the **LAN IP address and local domain name** can be provided dynamically by the current network configuration.
+>
+> 🖥️ **For desktops or servers on a controlled network:** a local domain name and a static or DHCP-reserved IP address can be explicitly defined, as shown in the Arch Aegis reference configuration.
+
 ### 🕒 Step 13 — Timezone & Clock Setup
 
 - 🌍 Set system timezone
@@ -676,78 +708,6 @@ hwclock --systohc
 ```
 
 > 💡 This synchronizes the hardware clock with the configured system time.
-
-### 🧩 Step 14 — Initramfs Configuration (AMDGPU Module, Systemd, LUKS, Keyboard)
-
-- ⚙️ Edit initramfs modules and hooks to include AMDGPU driver before anything, systemd & encryption
-
-```bash
-nvim /etc/mkinitcpio.conf
-```
-
-- Content:
-
-```bash
-MODULES=(amdgpu)
-
-HOOKS=(systemd plymouth autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems sd-shutdown)
-```
-
-> 💡 **Why is `fsck` not included?**  
-> The `fsck` hook is intentionally omitted because **BTRFS does not use the traditional filesystem check workflow provided by `fsck`**. Unlike filesystems such as Ext4, BTRFS does not require a routine filesystem check during boot. Filesystem integrity and repair are handled by BTRFS-specific tools such as `btrfs check`, which can be run manually when required.
->
-> This keeps the initramfs focused on the components actually required for boot, while avoiding unnecessary filesystem checks during normal startup.
-
-- 🔐 Setup encrypted volume for systemd to unlock via TPM2
-
-```bash
-nvim /etc/crypttab.initramfs
-```
-
-- Content:
-
-```bash
-cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard
-```
-
-- Get `<NVME-UUID>` on neovim:
-
-```bash
-:read ! lsblk -dno UUID /dev/nvme0n1p2
-```
-
-### 🧵 Step 15 — Kernel Command Line Configuration (UKI + disable zswap)
-
-- ⚙️ Root and logging options (read-only fs is handled by systemd and to fsck /)
-
-```bash
-nvim /etc/cmdline.d/01-root.conf
-```
-
-- Content:
-
-```bash
-root=/dev/mapper/cryptarch rootfstype=btrfs rootflags=subvol=@ ro loglevel=3 quiet
-```
-
-> 💡 Why `ro`?
-> The root filesystem is initially mounted read-only during early boot. This allows systemd to perform the necessary filesystem checks before the root filesystem is remounted read-write later in the boot process.
->
-> Since this configuration uses Btrfs and does not include the fsck hook in mkinitcpio, the ro flag ensures that the root filesystem is not modified before systemd has had the opportunity to perform its early-boot filesystem handling.
-
-> 💡 The `splash` parameter is intentionally omitted because Plymouth is used to provide the boot splash screen. If you want to use the splash screen provided by the `mkinitcpio` preset configured in the following step, you can add `splash` here.
-
-- 🧠 Disable kernel zswap to avoid duplicate swap compression when using zRam as primary swap device
-
-```bash
-nvim /etc/cmdline.d/02-zswap.conf
-```
-
-- Content:
-
-```bash
-zswap.enabled=0
-```
 
 ### 🧬 Step 16 — Initramfs Preset for Unified Kernel Image (UKI)
 
@@ -1159,7 +1119,9 @@ nvim /etc/makepkg.conf.d/rust.conf
 RUSTFLAGS="-C opt-level=2 -C target-cpu=native"
 ```
 
-### 🔇 Step 32 — Disable HDMI Audio
+### 🔇 Step 32 — Disable HDMI Audio (Optional)
+
+> *⚠️ Hardware-specific configuration — this step reflects the hardware used by this installation and should be adapted or skipped depending on your own system and use case.*
 
 - 🔕 Blacklist HDMI audio module
 
@@ -1173,7 +1135,9 @@ nvim /etc/modprobe.d/blacklist.conf
 blacklist snd_hda_intel
 ```
 
-### 🔒 Step 33 — Disable Webcam Microphone
+### 🔒 Step 33 — Disable Webcam Microphone (Optional)
+
+> *⚠️ Hardware-specific configuration — this step reflects the hardware used by this installation and should be adapted or skipped depending on your own system and use case.*
 
 - 🎙️ Block Logitech webcam microphone via udev rule
 
@@ -1189,7 +1153,7 @@ SUBSYSTEM=="usb", DRIVER=="snd-usb-audio", ATTRS{idVendor}=="046d", ATTRS{idProd
 
 ### ⚡ Step 34 — Allow games Group to Read CPU Power
 
-- 🎮 Grant members of the games group permission to read CPU power (via Intel RAPL interface).
+- 🎮 Grant members of the `games` group permission to read CPU package energy consumption through the Linux RAPL powercap interface.
 
 ```bash
 nvim /etc/udev/rules.d/70-intel-rapl.rules

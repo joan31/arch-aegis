@@ -800,7 +800,7 @@ rm /boot/initramfs-*.img
 
 ```bash
 efibootmgr --create --disk /dev/nvme0n1 --part 1 --label "Arch Linux" --loader /EFI/Linux/arch-linux.efi --unicode
-efibootmgr --create-only --disk /dev/nvme0n1 --part 1 --label "Arch Linux Fallback" --loader /EFI/Linux/arch-linux-fallback.efi --unicode
+efibootmgr --create --disk /dev/nvme0n1 --part 1 --label "Arch Linux Fallback" --loader /EFI/Linux/arch-linux-fallback.efi --unicode
 ```
 
 - 🔢 Set UEFI boot order
@@ -949,7 +949,7 @@ pacman -S bluez snapper pacman-contrib reflector firewalld
 
 ### 🕰️ Step 24 — Time Sync with French NTP Servers
 
-- ⏲️ Set systemd-timesyncd to use French pool servers with iburst
+- ⏲️ Set systemd-timesyncd to use French pool servers
 
 ```bash
 nvim /etc/systemd/timesyncd.conf

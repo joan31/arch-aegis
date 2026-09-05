@@ -113,7 +113,7 @@ Designed around **security, reliability, simplicity and system recovery**, it co
 
 ### 🛟 UKI Recovery
 - **Fallback UKI** built with a more generic initramfs for recovery
-- Provides a recovery boot option if the normal UKI or the installed kernel fails to boot correctly
+- Provides a recovery boot option if the normal **UKI** fails to boot correctly, particularly in cases where the default initramfs lacks the hardware support required to boot the system
 - Can be used to boot the system and perform recovery operations when the normal boot path is broken
 - Works alongside **BTRFS snapshots** to restore the system to a previous known-good state
 
@@ -471,7 +471,7 @@ mount -o rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=@ /dev/m
 mkdir -p /mnt/{efi,.swap,.snapshots,.efibackup,var/{log,tmp,cache,lib/libvirt/images},home,srv,opt/games}
 ```
 
-- 🖥️ Mount EFI system partition (read-only, noexec for safety)
+- 🖥️ Mount EFI system partition with hardened mount options
 
 ```bash
 mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022 /dev/nvme0n1p1 /mnt/efi
@@ -707,6 +707,8 @@ ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
 hwclock --systohc
 ```
 
+> 💡 This synchronizes the hardware clock with the configured system time.
+
 ### 🧠 Step 14 — Initramfs Configuration
 
 - ⚙️ Configure `mkinitcpio` to use the systemd-based initramfs and required early-boot components
@@ -804,8 +806,6 @@ nvim /etc/cmdline.d/02-zswap.conf
 ```text
 zswap.enabled=0
 ```
-
-> 💡 This synchronizes the hardware clock with the configured system time.
 
 ### 🧬 Step 16 — Initramfs Preset for Unified Kernel Image (UKI)
 
@@ -906,6 +906,29 @@ efibootmgr --create --disk /dev/nvme0n1 --part 1 --label "Arch Linux Fallback" -
 ```bash
 efibootmgr -o 0000,0001
 ```
+
+> 💡 **Boot order note:** The `Boot####` identifiers assigned to the newly created EFI entries may differ depending on the firmware and on existing NVRAM entries.
+>
+> Use the following command to display the current EFI boot entries and boot order:
+>
+> ```bash
+> efibootmgr -v
+> ```
+>
+> Then replace `0000,0001` with the actual `Boot####` identifiers assigned to the **Arch Linux** and **Arch Linux Fallback** entries, keeping the preferred boot entry first.
+>
+> For example, if `efibootmgr -v` shows:
+>
+> ```text
+> Boot0003* Arch Linux
+> Boot0004* Arch Linux Fallback
+> ```
+>
+> configure the boot order with:
+>
+> ```bash
+> efibootmgr -o 0003,0004
+> ```
 
 ### 🧠 Step 19 — zRam Setup
 
@@ -1511,7 +1534,7 @@ Because **UKI** allows booting the kernel directly from the EFI partition — no
 
 ### ❓ Can I use this on my laptop?
 
-Yes — it's ideal for modern laptops with TPM2 and Secure Boot enabled.
+Yes — the architecture is well suited to modern laptops with TPM2 and Secure Boot, provided the hardware-specific steps are adapted accordingly.
 
 ---
 

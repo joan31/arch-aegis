@@ -266,7 +266,7 @@ Boot process:
 | `/var/log` | `/dev/mapper/cryptarch` | `@log` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/var/tmp` | `/dev/mapper/cryptarch` | `@tmp` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/var/cache` | `/dev/mapper/cryptarch` | `@cache` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
-| `/var/lib/libvirt/images` | `/dev/mapper/cryptarch` | `@virt` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
+| `/var/lib/libvirt/images` | `/dev/mapper/cryptarch` | `@virt` | `rw,noatime,nodev,nosuid,noexec,ssd,discard=async,commit=120` |
 | `/home` | `/dev/mapper/cryptarch` | `@home` | `rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/srv` | `/dev/mapper/cryptarch` | `@srv` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/opt/games` | `/dev/mapper/cryptarch` | `@games` | `rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120` |
@@ -299,6 +299,10 @@ Boot process:
 > The trade-off is therefore a potentially larger window for some recent unsynchronized changes to be lost in the event of a sudden power failure or system crash. Data that has already been explicitly synchronized may still be safely persisted even if the current BTRFS transaction has not yet reached its periodic commit interval.
 >
 > This setting does not disable BTRFS copy-on-write or its filesystem consistency mechanisms. It changes the maximum periodic transaction commit interval rather than simply delaying every disk write for 120 seconds.
+>
+> 💡 **Virtual machine storage:** `compress=zstd:3` is intentionally omitted from the `@virt` mount command because `/var/lib/libvirt/images` is configured with the `NOCOW` attribute using `chattr +C`. NOCOW data is not compressed by BTRFS, making the compression option irrelevant for virtual machine disk images.
+>
+> The BTRFS `nodatacow` mount option is not used for `@virt` because mount options such as `nodatacow` apply at the filesystem level and cannot be independently configured per subvolume when multiple subvolumes belong to the same BTRFS filesystem. Using `chattr +C` therefore allows NOCOW behavior to be applied specifically to `/var/lib/libvirt/images` while preserving normal Copy-on-Write and compression for the rest of the filesystem.
 
 ---
 
@@ -486,11 +490,29 @@ mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@log /dev/mapper/cryptarch /mnt/var/log
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@tmp /dev/mapper/cryptarch /mnt/var/tmp
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@cache /dev/mapper/cryptarch /mnt/var/cache
-mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@virt /dev/mapper/cryptarch /mnt/var/lib/libvirt/images
+mount -o rw,noatime,nodev,nosuid,noexec,ssd,discard=async,commit=120,subvol=@virt /dev/mapper/cryptarch /mnt/var/lib/libvirt/images
 mount -o rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120,subvol=@home /dev/mapper/cryptarch /mnt/home
 mount -o rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120,subvol=@srv /dev/mapper/cryptarch /mnt/srv
 mount -o rw,noatime,nodev,nosuid,compress=zstd:3,ssd,discard=async,commit=120,subvol=@games /dev/mapper/cryptarch /mnt/opt/games
 ```
+
+- 💾 Disable Copy-on-Write for virtual machine disk images
+
+```bash
+chattr +C /mnt/var/lib/libvirt/images
+```
+
+> 💡 **BTRFS NOCOW for virtual machine images**
+>
+> Virtual machine disk images such as `qcow2` files are frequently modified through small and random writes. When stored on BTRFS with Copy-on-Write enabled, these workloads can gradually increase file fragmentation and introduce additional CoW overhead.
+>
+> The `@virt` subvolume is therefore dedicated to virtual machine disk images and its root directory is marked with the BTRFS `NOCOW` attribute using `chattr +C`.
+>
+> The attribute is persistent and only needs to be configured once. New files created inside `/var/lib/libvirt/images` inherit the `NOCOW` behavior, allowing their data to be updated in place instead of using BTRFS Copy-on-Write.
+>
+> ⚠️ `NOCOW` also disables BTRFS data checksumming and compression for the affected file data. For this reason, it is intentionally limited to the virtual machine image directory and is not applied globally to the filesystem.
+>
+> The `+C` attribute must be applied **after mounting `@virt`**. Applying it to the mount point before mounting the subvolume would modify the underlying directory instead of the root directory of the `@virt` subvolume.
 
 ### 💾 Step 6 — Create Swap File
 

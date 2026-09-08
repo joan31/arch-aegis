@@ -36,7 +36,7 @@ The project favors a minimal and coherent design where each component has a clea
 - [🗂️ Disk Layout & Subvolume Architecture](#️-disk-layout--subvolume-architecture)
 - [🔧 Mount Options Summary](#-mount-options-summary)
 - [📖 Manual Installation (Step-by-step)](#-manual-installation-step-by-step)
-- [🛟 Disaster Recovery — Restore a BTRFS Snapshot & EFI Backup](#-disaster-recovery-restore-a-btrfs-snapshot--efi-backup)
+- [🛟 Disaster Recovery — Restore a BTRFS Snapshot & EFI Backup](#-disaster-recovery--restore-a-btrfs-snapshot--efi-backup)
 - [❓ FAQ](#-faq)
 - [🛠 Requirements](#-requirements)
 - [📜 License](#-license)

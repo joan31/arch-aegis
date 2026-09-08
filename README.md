@@ -1651,7 +1651,7 @@ Verify the available subvolumes:
 btrfs subvolume list /mnt
 ```
 
-### 📸 Step 4 — Identify the Snapshot to Restore
+### 📸 Step 4 — Identify & Verify the Snapshot to Restore
 
 List the available Snapper snapshots:
 
@@ -1663,22 +1663,15 @@ Snapshots are stored using their Snapper snapshot ID:
 
 ```text
 @snapshots/
-├── 1/
-├── 2/
-├── 3/
-└── ...
+├── 40/
+├── 41/
+└── 42/
 ```
 
 The actual BTRFS snapshot is located inside:
 
 ```text
 /mnt/@snapshots/<SNAPSHOT_ID>/snapshot
-```
-
-For example:
-
-```text
-/mnt/@snapshots/42/snapshot
 ```
 
 Under the normal Arch Aegis upgrade workflow, the snapshot with the **highest Snapper ID** should normally be the snapshot created immediately before the failed Pacman transaction.
@@ -1688,20 +1681,44 @@ For example:
 ```text
 40
 41
-42    ← Most recent pre-upgrade snapshot
+42    ← Most recent snapshot
 ```
 
-In this case, the snapshot to restore would normally be:
+In this case, the expected snapshot to restore would be:
 
 ```text
 /mnt/@snapshots/42/snapshot
 ```
 
-> 💡 Arch Aegis creates a root snapshot before the relevant Pacman transaction. Therefore, when recovering immediately after a failed upgrade, the snapshot with the highest ID should normally represent the root filesystem state immediately before that upgrade.
->
-> ⚠️ Always verify the snapshot before restoring it. If additional snapshots or transactions occurred after the failed upgrade, the highest ID may no longer correspond to the desired recovery state.
+Before restoring it, inspect its Snapper metadata:
 
-### 💾 Step 5 — Identify the Corresponding EFI Backup
+```bash
+cat /mnt/@snapshots/42/info.xml
+```
+
+The `info.xml` file contains metadata associated with the snapshot, including its creation date and description.
+
+For example:
+
+```xml
+<snapshot>
+  <type>single</type>
+  <num>42</num>
+  <date>2026-09-08 10:30:00</date>
+  <description>...</description>
+  ...
+</snapshot>
+```
+
+> 💡 **Snapshot selection:** Arch Aegis creates a root snapshot before the relevant Pacman transaction. Therefore, when recovering immediately after a failed upgrade, the snapshot with the highest Snapper ID should normally represent the root filesystem state immediately before that upgrade.
+>
+> The snapshot metadata stored in `info.xml` provides an additional verification step before performing the rollback. Check its date and description to confirm that the selected snapshot corresponds to the failed upgrade.
+>
+> ⚠️ Snapper records the `<date>` value in `info.xml` in **UTC**. Take the difference between UTC and local time into account when comparing it with other timestamps.
+>
+> If additional snapshots or transactions occurred after the failed upgrade, do not automatically select the highest ID. Instead, identify the snapshot whose metadata corresponds to the desired pre-upgrade state.
+
+### 💾 Step 5 — Identify & Verify the Corresponding EFI Backup
 
 The EFI backups are stored inside the dedicated `@efibck` subvolume.
 
@@ -1714,7 +1731,7 @@ ls -lht /mnt/@efibck
 For example:
 
 ```text
-efi-20260907-120501.tar.gz
+efi-20260908-123001.tar.gz
 efi-20260905-184210.tar.gz
 efi-20260901-093455.tar.gz
 ```
@@ -1724,14 +1741,30 @@ Under the normal Arch Aegis upgrade workflow, the **most recent EFI backup** sho
 In this example:
 
 ```text
-efi-20260907-120501.tar.gz    ← Most recent pre-upgrade EFI backup
+efi-20260908-123001.tar.gz    ← Most recent EFI backup
 ```
 
-would normally correspond to the latest pre-upgrade BTRFS snapshot selected in the previous step.
+should normally correspond to the most recent pre-upgrade BTRFS snapshot identified in the previous step.
 
-> 💡 Arch Aegis creates both the BTRFS snapshot and the EFI backup before the relevant system upgrade. Therefore, when recovering immediately after a failed kernel upgrade, the snapshot with the highest Snapper ID and the EFI backup with the most recent timestamp should normally form the recovery pair.
+Compare the timestamp of the EFI backup with the snapshot metadata:
+
+```bash
+cat /mnt/@snapshots/<SNAPSHOT_ID>/info.xml
+```
+
+and:
+
+```bash
+ls -lht /mnt/@efibck
+```
+
+The snapshot and EFI backup should both correspond to the system state immediately before the failed transaction.
+
+> 💡 **Recovery pair:** Under the normal Arch Aegis upgrade workflow, the snapshot with the **highest Snapper ID** and the EFI backup with the **most recent timestamp** should normally form the recovery pair, since both are created before the relevant system upgrade.
 >
-> ⚠️ Always verify their timestamps before restoring them to ensure that both belong to the same pre-upgrade system state. This is especially important after a kernel upgrade because the UKI stored on the EFI System Partition and the kernel modules stored in `/usr/lib/modules` must correspond to each other.
+> The snapshot can be verified using its `info.xml` metadata, while the EFI backup can be identified from the timestamp embedded in its filename and its filesystem modification time.
+>
+> ⚠️ Always verify that both correspond to the same pre-upgrade period before restoring them. This is especially important after a kernel upgrade because the signed UKI stored on the EFI System Partition and the corresponding kernel modules stored in `/usr/lib/modules` must remain consistent.
 
 ### 🛡️ Step 6 — Preserve the Broken Root Subvolume
 

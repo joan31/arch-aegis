@@ -36,6 +36,7 @@ The project favors a minimal and coherent design where each component has a clea
 - [🗂️ Disk Layout & Subvolume Architecture](#️-disk-layout--subvolume-architecture)
 - [🔧 Mount Options Summary](#-mount-options-summary)
 - [📖 Manual Installation (Step-by-step)](#-manual-installation-step-by-step)
+- [🛟 Disaster Recovery — Restore a BTRFS Snapshot & EFI Backup](#-disaster-recovery-restore-a-btrfs-snapshot--efi-backup)
 - [❓ FAQ](#-faq)
 - [🛠 Requirements](#-requirements)
 - [📜 License](#-license)
@@ -1545,6 +1546,517 @@ snapper -c root delete 1-2
 ```bash
 snapper -c root create -d "init"
 ```
+
+---
+
+## 🛟 Disaster Recovery — Restore a BTRFS Snapshot & EFI Backup
+
+If the system becomes completely unbootable after a system upgrade, Arch Aegis can be restored from an Arch Linux installation medium by combining:
+
+- 📸 The BTRFS snapshot created before the failed Pacman transaction.
+- 💾 The EFI System Partition backup created before the same transaction.
+
+This is particularly important after a kernel upgrade because the Unified Kernel Image stored on the EFI System Partition and the kernel modules stored inside the root filesystem must remain consistent.
+
+```text
+Previous BTRFS snapshot
+└── /usr/lib/modules/<previous-kernel>
+            │
+            │
+            └──────────────┐
+                           │
+Previous EFI backup        │
+└── /EFI/Linux/            │
+    ├── arch-linux.efi ────┤
+    └── arch-linux-fallback.efi
+                           │
+                           ▼
+                 Consistent boot state
+```
+
+> 💡 Restoring only an older UKI may not be sufficient after a kernel upgrade because the corresponding kernel modules may no longer exist in the current root filesystem.
+>
+> Restoring the BTRFS root snapshot together with the corresponding EFI backup restores the kernel, initramfs, kernel modules and userspace to a consistent previous state.
+
+### 🔐 Step 1 — Prepare for Recovery
+
+Boot from an Arch Linux installation USB drive.
+
+> ⚠️ **Secure Boot:** The Arch Linux installation medium may not be trusted by the Secure Boot keys enrolled on the system.
+>
+> If the firmware refuses to boot the Arch Linux USB drive, temporarily disable **Secure Boot** from the UEFI firmware settings.
+>
+> Secure Boot should be re-enabled after the rollback has been completed and before returning to normal system operation.
+
+> 🔑 **LUKS recovery passphrase:** TPM2 automatic unlocking should not be relied upon from the Arch Linux live environment.
+>
+> Make sure the LUKS recovery passphrase is available before starting the recovery procedure. It provides an independent method of unlocking the encrypted system volume when TPM2 automatic unlocking is unavailable.
+
+Once the Arch Linux live environment has started, identify the system partitions if necessary:
+
+```bash
+lsblk -f
+```
+
+### 🔓 Step 2 — Unlock the LUKS Container
+
+Open the encrypted BTRFS partition:
+
+```bash
+cryptsetup open /dev/nvme0n1p2 cryptarch
+```
+
+Enter the LUKS recovery passphrase when prompted.
+
+The decrypted BTRFS filesystem becomes available as:
+
+```text
+/dev/mapper/cryptarch
+```
+
+### 🌳 Step 3 — Mount the BTRFS Top-Level
+
+Mount the BTRFS top-level subvolume, which always has the reserved subvolume ID `5`:
+
+```bash
+mount -o subvolid=5 /dev/mapper/cryptarch /mnt
+```
+
+> 💡 **Why `subvolid=5`?**
+>
+> BTRFS automatically creates a top-level subvolume with the reserved ID `5`. All Arch Aegis subvolumes such as `@`, `@home`, `@snapshots` and `@efibck` exist below this top-level.
+>
+> During normal operation, `subvol=@` is mounted as the system root. During recovery, however, the BTRFS top-level must be mounted so that the subvolumes themselves can be accessed and manipulated.
+>
+> Mounting `subvolid=5` therefore exposes the complete BTRFS subvolume hierarchy:
+>
+> ```text
+> BTRFS top-level (ID 5)
+> ├── @
+> ├── @swap
+> ├── @snapshots
+> ├── @efibck
+> ├── @log
+> ├── @cache
+> ├── @tmp
+> ├── @virt
+> ├── @home
+> ├── @srv
+> └── @games
+> ```
+
+Verify the available subvolumes:
+
+```bash
+btrfs subvolume list /mnt
+```
+
+### 📸 Step 4 — Identify the Snapshot to Restore
+
+List the available Snapper snapshots:
+
+```bash
+ls -lah /mnt/@snapshots
+```
+
+Snapshots are stored using their Snapper snapshot ID:
+
+```text
+@snapshots/
+├── 1/
+├── 2/
+├── 3/
+└── ...
+```
+
+The actual BTRFS snapshot is located inside:
+
+```text
+/mnt/@snapshots/<SNAPSHOT_ID>/snapshot
+```
+
+For example:
+
+```text
+/mnt/@snapshots/42/snapshot
+```
+
+Under the normal Arch Aegis upgrade workflow, the snapshot with the **highest Snapper ID** should normally be the snapshot created immediately before the failed Pacman transaction.
+
+For example:
+
+```text
+40
+41
+42    ← Most recent pre-upgrade snapshot
+```
+
+In this case, the snapshot to restore would normally be:
+
+```text
+/mnt/@snapshots/42/snapshot
+```
+
+> 💡 Arch Aegis creates a root snapshot before the relevant Pacman transaction. Therefore, when recovering immediately after a failed upgrade, the snapshot with the highest ID should normally represent the root filesystem state immediately before that upgrade.
+>
+> ⚠️ Always verify the snapshot before restoring it. If additional snapshots or transactions occurred after the failed upgrade, the highest ID may no longer correspond to the desired recovery state.
+
+### 💾 Step 5 — Identify the Corresponding EFI Backup
+
+The EFI backups are stored inside the dedicated `@efibck` subvolume.
+
+List them from newest to oldest:
+
+```bash
+ls -lht /mnt/@efibck
+```
+
+For example:
+
+```text
+efi-20260907-120501.tar.gz
+efi-20260905-184210.tar.gz
+efi-20260901-093455.tar.gz
+```
+
+Under the normal Arch Aegis upgrade workflow, the **most recent EFI backup** should normally be the backup created immediately before the failed Pacman transaction.
+
+In this example:
+
+```text
+efi-20260907-120501.tar.gz    ← Most recent pre-upgrade EFI backup
+```
+
+would normally correspond to the latest pre-upgrade BTRFS snapshot selected in the previous step.
+
+> 💡 Arch Aegis creates both the BTRFS snapshot and the EFI backup before the relevant system upgrade. Therefore, when recovering immediately after a failed kernel upgrade, the snapshot with the highest Snapper ID and the EFI backup with the most recent timestamp should normally form the recovery pair.
+>
+> ⚠️ Always verify their timestamps before restoring them to ensure that both belong to the same pre-upgrade system state. This is especially important after a kernel upgrade because the UKI stored on the EFI System Partition and the kernel modules stored in `/usr/lib/modules` must correspond to each other.
+
+### 🛡️ Step 6 — Preserve the Broken Root Subvolume
+
+Do not immediately delete the current broken root.
+
+Rename it instead:
+
+```bash
+mv /mnt/@ /mnt/@broken
+```
+
+The failed root filesystem is now preserved as:
+
+```text
+@broken
+```
+
+This provides an additional recovery layer in case files need to be retrieved from the failed system or the rollback needs to be investigated.
+
+Verify:
+
+```bash
+btrfs subvolume list /mnt
+```
+
+You should now see both the Snapper snapshots and the preserved broken root:
+
+```text
+@broken
+@snapshots
+@efibck
+...
+```
+
+> 💡 Keeping the failed root temporarily makes the rollback reversible. `@broken` should only be deleted after the restored system has successfully booted and has been validated.
+
+### ⏪ Step 7 — Restore the Root Snapshot
+
+Create a new writable `@` subvolume from the selected Snapper snapshot:
+
+```bash
+btrfs subvolume snapshot /mnt/@snapshots/<SNAPSHOT_ID>/snapshot /mnt/@
+```
+
+For example:
+
+```bash
+btrfs subvolume snapshot /mnt/@snapshots/42/snapshot /mnt/@
+```
+
+Verify that the new root subvolume has been created:
+
+```bash
+btrfs subvolume list /mnt
+```
+
+The layout should now contain:
+
+```text
+@
+@broken
+@snapshots
+@efibck
+...
+```
+
+The new `@` contains the root filesystem from the selected snapshot, including the previous kernel modules stored under:
+
+```text
+/usr/lib/modules/
+```
+
+> 💡 The original Snapper snapshot remains untouched. A new writable BTRFS snapshot is created from it and becomes the restored `@` root subvolume.
+>
+> The separate Arch Aegis subvolumes such as `@home`, `@log`, `@cache`, `@virt` and `@games` are not rolled back because they exist independently from the root `@` snapshot.
+
+### 🖥️ Step 8 — Mount the EFI System Partition
+
+Create a temporary mount point for the EFI System Partition:
+
+```bash
+mkdir -p /mnt/esp
+```
+
+Mount the EFI System Partition using the normal Arch Aegis mount options:
+
+```bash
+mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022 /dev/nvme0n1p1 /mnt/esp
+```
+
+Verify its current contents if desired:
+
+```bash
+ls -lah /mnt/esp
+```
+
+### 💾 Step 9 — Restore the EFI Backup
+
+Remove the contents of the current EFI System Partition:
+
+```bash
+rm -rf /mnt/esp/*
+```
+
+Restore the selected EFI backup:
+
+```bash
+tar -xzf /mnt/@efibck/efi-YYYYMMDD-HHMMSS.tar.gz \
+    --strip-components=1 \
+    -C /mnt/esp
+```
+
+For example:
+
+```bash
+tar -xzf /mnt/@efibck/efi-20260907-120501.tar.gz \
+    --strip-components=1 \
+    -C /mnt/esp
+```
+
+> 💡 Arch Aegis EFI backups are created from `/efi`, therefore the archive contains an `efi/` top-level directory.
+>
+> `--strip-components=1` removes this directory level during extraction so that its contents are restored directly to the root of the mounted EFI System Partition.
+
+Verify the restored UKIs:
+
+```bash
+ls -lh /mnt/esp/EFI/Linux
+```
+
+The restored EFI System Partition should contain the previous signed UKIs:
+
+```text
+arch-linux.efi
+arch-linux-fallback.efi
+```
+
+### 🔒 Step 10 — Cleanly Unmount the Filesystems
+
+Unmount the EFI System Partition:
+
+```bash
+umount /mnt/esp
+```
+
+Unmount the BTRFS filesystem:
+
+```bash
+umount /mnt
+```
+
+Close the LUKS container:
+
+```bash
+cryptsetup close cryptarch
+```
+
+### 🔄 Step 11 — Re-enable Secure Boot & Reboot
+
+Reboot the system:
+
+```bash
+reboot
+```
+
+If Secure Boot was temporarily disabled to boot the Arch Linux installation medium:
+
+1. Enter the UEFI firmware settings.
+2. Re-enable **Secure Boot**.
+3. Remove the Arch Linux installation medium.
+4. Boot the restored **Arch Linux** EFI entry normally.
+
+The system should now boot using the restored previous state:
+
+```text
+Restored EFI backup
+        │
+        ├── arch-linux.efi
+        └── arch-linux-fallback.efi
+                    │
+                    ▼
+            Restored @ snapshot
+                    │
+                    ├── Previous userspace
+                    └── Previous kernel modules
+```
+
+Once the system has successfully booted, verify the Secure Boot state:
+
+```bash
+sbctl status
+```
+
+The restored signed UKI should once again boot through the normal Secure Boot chain.
+
+### 🧪 Step 12 — Validate the Restored System
+
+Before deleting the preserved broken root, verify that the restored system is operating correctly.
+
+Check the running kernel:
+
+```bash
+uname -r
+```
+
+Verify that the corresponding kernel modules are available:
+
+```bash
+ls /usr/lib/modules/$(uname -r)
+```
+
+Verify the Secure Boot state:
+
+```bash
+sbctl status
+```
+
+Verify the mounted BTRFS subvolumes:
+
+```bash
+findmnt -t btrfs
+```
+
+The system should now be running from the previous consistent state.
+
+### 🧹 Step 13 — Remove the Broken Root After Validation
+
+Only after the restored system has successfully booted and has been fully validated should the preserved broken root be removed.
+
+Mount the BTRFS top-level:
+
+```bash
+sudo mount -o subvolid=5 /dev/mapper/cryptarch /mnt
+```
+
+Verify that `@broken` is present:
+
+```bash
+sudo btrfs subvolume list /mnt
+```
+
+Delete the broken root subvolume:
+
+```bash
+sudo btrfs subvolume delete /mnt/@broken
+```
+
+Unmount the BTRFS top-level:
+
+```bash
+sudo umount /mnt
+```
+
+> ⚠️ Do not delete `@broken` until the restored system has successfully booted and all required data has been verified.
+>
+> Keeping it temporarily provides a final recovery path if something was missing from the selected snapshot.
+
+### 🛡️ Recovery Strategy Summary
+
+Under the normal Arch Aegis upgrade workflow:
+
+```text
+                     Pacman Transaction
+                            │
+                  Before modifications
+                            │
+             ┌──────────────┴──────────────┐
+             │                             │
+             ▼                             ▼
+      BTRFS Snapshot                  EFI Backup
+    Highest Snapper ID              Latest timestamp
+             │                             │
+             │                             │
+             └──────────────┬──────────────┘
+                            │
+                     Pre-upgrade state
+                            │
+                            ▼
+                       System Upgrade
+                            │
+                            ▼
+                        Boot Failure
+                            │
+                            ▼
+                    Arch Linux Live ISO
+                            │
+                            ▼
+                  Mount BTRFS ID 5
+                            │
+             ┌──────────────┴──────────────┐
+             │                             │
+             ▼                             ▼
+      Preserve current @             Restore EFI
+        as @broken                     backup
+             │                             │
+             ▼                             │
+    Restore latest valid                  │
+       root snapshot                      │
+             │                             │
+             └──────────────┬──────────────┘
+                            ▼
+                 Previous consistent state
+                            │
+                            ▼
+                  Secure Boot re-enabled
+                            │
+                            ▼
+                       Normal Boot
+                            │
+                            ▼
+                    Validate system
+                            │
+                            ▼
+                  Delete @broken
+```
+
+This recovery strategy restores both components required for a consistent boot environment:
+
+- The BTRFS root snapshot restores the previous userspace and kernel modules.
+- The EFI backup restores the corresponding signed Unified Kernel Images.
+- The failed root is preserved as `@broken` until recovery has been validated.
+- Independent subvolumes remain untouched by the root rollback.
+- Secure Boot is restored before returning to normal system operation.
+
+This allows a failed kernel or system upgrade to be rolled back without reinstalling Arch Linux while preserving multiple recovery layers throughout the process.
 
 ---
 

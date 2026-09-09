@@ -1146,18 +1146,7 @@ nvim /etc/udev/rules.d/60-schedulers.rules
 ACTION=="add|change", KERNEL=="nvme[0-9]*", ENV{DEVTYPE}=="disk", ATTR{queue/scheduler}="none"
 ```
 
-### 🧭 Step 26 — DNS Stub Resolver via systemd-resolved
-
-> ⚠️ Only apply this step if you are using *systemd-networkd* (from Step 22)
-> ⏭️ Skip this step if you selected *NetworkManager*
-
-- 🔁 Link stub resolver to `/etc/resolv.conf`
-
-```bash
-ln -sf ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-```
-
-### 🌐 Step 27 — Reflector Configuration (Update Mirrorlist)
+### 🌐 Step 26 — Reflector Configuration (Update Mirrorlist)
 
 - 🌍 Optimize pacman mirrors by age, country, and protocol
 
@@ -1175,7 +1164,7 @@ nvim /etc/xdg/reflector/reflector.conf
 --sort age
 ```
 
-### ⚙️ Step 28 — Enable Key Services (Networking, Bluetooth, Time, Firewall, Maintenance)
+### ⚙️ Step 27 — Enable Key Services (Networking, Bluetooth, Time, Firewall, Maintenance)
 
 - 🌐 Enable network services (based on your previous choice)
 
@@ -1185,6 +1174,8 @@ nvim /etc/xdg/reflector/reflector.conf
 systemctl enable systemd-networkd.service
 systemctl enable systemd-resolved.service
 ```
+
+> 💡 `/etc/resolv.conf` will be linked to the `systemd-resolved` stub resolver **after leaving the chroot**, because `/etc/resolv.conf` is bind-mounted from the Arch Linux live environment while inside `arch-chroot` and cannot be replaced reliably from within the chroot.
 
 - 🖥️ If using *NetworkManager*:
 
@@ -1225,7 +1216,7 @@ systemctl mask hibernate.target hybrid-sleep.target
 >  
 > 💡 On KDE Plasma, this also removes the hibernation option from the power menu, making it cleaner and less confusing.
 
-### 🧰 Step 29 — Configure Default System Editors
+### 🧰 Step 28 — Configure Default System Editors
 
 - 📝 Define default system editor (used by system tools like systemctl edit, git, etc.)
 
@@ -1246,7 +1237,7 @@ VISUAL=nvim
 export EDITOR=nvim VISUAL=nvim
 ```
 
-### 🔑 Step 30 — Configure sudo
+### 🔑 Step 29 — Configure sudo
 
 - 🛡️ Grant sudo to wheel group
 
@@ -1260,7 +1251,7 @@ visudo
 %wheel ALL=(ALL:ALL) ALL
 ```
 
-### 🚧 Step 31 — Compilation Optimization (makepkg)
+### 🚧 Step 30 — Compilation Optimization (makepkg)
 
 - 🧰 Tune makepkg flags for native arch, use /tmp for build
 
@@ -1288,7 +1279,7 @@ nvim /etc/makepkg.conf.d/rust.conf
 RUSTFLAGS="-C opt-level=2 -C target-cpu=native"
 ```
 
-### 🔇 Step 32 — Disable HDMI Audio (Optional)
+### 🔇 Step 31 — Disable HDMI Audio (Optional)
 
 > *⚠️ Hardware-specific configuration — this step reflects the hardware used by this installation and should be adapted or skipped depending on your own system and use case.*
 
@@ -1304,7 +1295,7 @@ nvim /etc/modprobe.d/blacklist.conf
 blacklist snd_hda_intel
 ```
 
-### 🔒 Step 33 — Disable Webcam Microphone (Optional)
+### 🔒 Step 32 — Disable Webcam Microphone (Optional)
 
 > *⚠️ Hardware-specific configuration — this step reflects the hardware used by this installation and should be adapted or skipped depending on your own system and use case.*
 
@@ -1320,7 +1311,7 @@ nvim /etc/udev/rules.d/90-blacklist-webcam-sound.rules
 SUBSYSTEM=="usb", DRIVER=="snd-usb-audio", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="085c", ATTR{authorized}="0"
 ```
 
-### ⚡ Step 34 — Allow games Group to Read CPU Power
+### ⚡ Step 33 — Allow games Group to Read CPU Power
 
 - 🎮 Grant members of the `games` group permission to read CPU package energy consumption through the Linux RAPL powercap interface.
 
@@ -1336,20 +1327,41 @@ SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", RUN+="/usr/bin/chgrp games /sys/%
 
 > ✅ This ensures users in the `games` group can access CPU energy readings without requiring root privileges — useful for monitoring tools or performance overlays.
 
-### 🔐 Step 35 — Set Root Password
+### 🔐 Step 34 — Set Root Password and Exit Chroot
 
-- 🔑 Set root password
+- 🔑 Set root password and exit chroot
 
 ```bash
 passwd root
+exit
 ```
 
-### 🚪 Step 36 — Exit chroot, Unmount, Reboot into Firmware Setup
+### 🧭 Step 35 — DNS Stub Resolver via systemd-resolved
 
-- 👋 Exit chroot, unmount and reboot into UEFI/BIOS to check if Secure Boot is enabled
+> ⚠️ Only apply this step if you are using *systemd-networkd* (from Step 22)
+> ⏭️ Skip this step if you selected *NetworkManager*
+
+- 🔁 Link stub resolver to `/etc/resolv.conf`
 
 ```bash
-exit
+ln -sf ../run/systemd/resolve/stub-resolv.conf /mnt/etc/resolv.conf
+```
+
+> 💡 This creates `/etc/resolv.conf` as a symbolic link to `/run/systemd/resolve/stub-resolv.conf`, which uses the local `127.0.0.53` DNS stub provided by `systemd-resolved`.
+>
+> The relative target path beginning with `../` is resolved relative to `/etc/resolv.conf`, not relative to the current working directory. After booting the installed system, the link therefore resolves correctly to:
+>
+> ```bash
+> /etc/resolv.conf
+>     └── ../run/systemd/resolve/stub-resolv.conf
+>             └── /run/systemd/resolve/stub-resolv.conf
+> ```
+
+### 🚪 Step 36 — Unmount, Reboot into Firmware Setup
+
+- 👋 Unmount and reboot into UEFI/BIOS to check if Secure Boot is enabled
+
+```bash
 umount -R /mnt
 systemctl reboot --firmware-setup
 ```
@@ -1362,7 +1374,7 @@ systemctl reboot --firmware-setup
 systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme0n1p2
 ```
 
-### 🎮 Step 38 — Shared games directory (multi-user Steam library)
+### 🎮 Step 38 — Shared games directory (multi-user Steam library...)
 
 - 🕹️ Allow access and inheritance for users in the `games` group via ACL
 

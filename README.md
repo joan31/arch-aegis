@@ -792,6 +792,31 @@ cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.devi
 :read ! lsblk -dno UUID /dev/nvme0n1p2
 ```
 
+> 💡 **`crypttab.initramfs` options explained**
+>
+> The entry follows the standard `crypttab` format:
+>
+> ```text
+> <name>    <encrypted-device>    <key-file>    <options>
+> ```
+>
+> - `cryptarch` — Creates the decrypted device mapping as `/dev/mapper/cryptarch`.
+> - `UUID=<NVME-UUID>` — Identifies the LUKS2 partition by UUID instead of relying on a potentially variable device name such as `/dev/nvme0n1p2`.
+> - `none` — No external key file is specified. The volume can be unlocked through the enrolled TPM2 token or, when necessary, with the LUKS recovery passphrase.
+> - `tpm2-device=auto` — Automatically discovers the TPM2 device and attempts to unlock the LUKS2 volume using the enrolled TPM2 token.
+> - `password-echo=no` — Prevents the LUKS passphrase from being displayed while it is entered manually.
+> - `x-systemd.device-timeout=0` — Allows systemd to wait indefinitely for the encrypted device to become available.
+> - `timeout=0` — Disables the unlock timeout, allowing manual passphrase entry to remain available without a time limit if automatic TPM2 unlocking fails.
+> - `no-read-workqueue` — Disables the dm-crypt read workqueue, reducing additional I/O scheduling overhead on fast storage such as NVMe devices.
+> - `no-write-workqueue` — Disables the dm-crypt write workqueue for the same reason.
+> - `discard` — Allows discard/TRIM requests to pass through the dm-crypt layer to the underlying SSD/NVMe device.
+>
+> 🔐 TPM2 provides convenient automatic unlocking but does not replace the LUKS recovery passphrase. If TPM2 automatic unlocking fails, the passphrase remains available as an independent recovery method.
+>
+> 💾 Allowing `discard` through dm-crypt is required for filesystem discard/TRIM requests to reach the underlying SSD.
+>
+> ⚡ `no-read-workqueue` and `no-write-workqueue` are performance-oriented dm-crypt options intended to reduce workqueue overhead on fast storage. They are optimizations rather than requirements for LUKS2 or TPM2 operation.
+
 ### 🧵 Step 15 — Kernel Command Line Configuration
 
 - ⚙️ Configure root filesystem and boot logging options

@@ -788,8 +788,6 @@ nvim /etc/crypttab.initramfs
 cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard,x-initrd.attach
 ```
 
-> - `x-initrd.attach` — Marks the encrypted root device as being attached during the initramfs stage, allowing systemd to keep the mapping available until the root filesystem has been unmounted during shutdown.
-
 - Get `<NVME-UUID>` directly from Neovim:
 
 ```bash
@@ -814,6 +812,7 @@ cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.devi
 > - `no-read-workqueue` — Disables the dm-crypt read workqueue, reducing additional I/O scheduling overhead on fast storage such as NVMe devices.
 > - `no-write-workqueue` — Disables the dm-crypt write workqueue for the same reason.
 > - `discard` — Allows discard/TRIM requests to pass through the dm-crypt layer to the underlying SSD/NVMe device.
+> - `x-initrd.attach` — Marks the encrypted root device as being attached during the initramfs stage, allowing systemd to keep the mapping available until the root filesystem has been unmounted during shutdown.
 >
 > 🔐 TPM2 provides convenient automatic unlocking but does not replace the LUKS recovery passphrase. If TPM2 automatic unlocking fails, the passphrase remains available as an independent recovery method.
 >

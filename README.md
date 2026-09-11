@@ -2045,6 +2045,17 @@ Delete the broken root subvolume:
 sudo btrfs subvolume delete /mnt/@broken
 ```
 
+> 💡 If `@broken` contains nested BTRFS subvolumes, they must be removed before the parent `@broken` subvolume can be deleted. Systemd may automatically create nested subvolumes such as `/var/lib/machines` and `/var/lib/portables` on BTRFS systems.
+>
+> If these automatically created subvolumes are empty or their contents are no longer required, delete them first:
+>
+> ```bash
+> sudo btrfs subvolume delete /mnt/@broken/var/lib/machines
+> sudo btrfs subvolume delete /mnt/@broken/var/lib/portables
+> ```
+>
+> Once all nested subvolumes have been removed, the parent `@broken` subvolume can be safely deleted.
+
 Unmount the BTRFS top-level:
 
 ```bash

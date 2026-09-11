@@ -140,6 +140,8 @@ Designed around **security, reliability, simplicity and system recovery**, it co
 
 ```text
 arch-aegis/
+├── assets/
+|   └── arch-aegis-readme.png
 ├── LICENSE
 └── README.md
 ```
@@ -783,8 +785,10 @@ nvim /etc/crypttab.initramfs
 - Content:
 
 ```bash
-cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard
+cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard,x-initrd.attach
 ```
+
+> - `x-initrd.attach` — Marks the encrypted root device as being attached during the initramfs stage, allowing systemd to keep the mapping available until the root filesystem has been unmounted during shutdown.
 
 - Get `<NVME-UUID>` directly from Neovim:
 
@@ -1351,7 +1355,7 @@ ln -sf ../run/systemd/resolve/stub-resolv.conf /mnt/etc/resolv.conf
 >
 > The relative target path beginning with `../` is resolved relative to `/etc/resolv.conf`, not relative to the current working directory. After booting the installed system, the link therefore resolves correctly to:
 >
-> ```bash
+> ```text
 > /etc/resolv.conf
 >     └── ../run/systemd/resolve/stub-resolv.conf
 >             └── /run/systemd/resolve/stub-resolv.conf
@@ -1696,7 +1700,7 @@ List the available Snapper snapshots:
 ls -lah /mnt/@snapshots
 ```
 
-Snapshots are stored using their Snapper snapshot ID:
+Snapshots are stored using their Snapper snapshot IDs:
 
 ```text
 @snapshots/
@@ -1711,49 +1715,42 @@ The actual BTRFS snapshot is located inside:
 /mnt/@snapshots/<SNAPSHOT_ID>/snapshot
 ```
 
-Under the normal Arch Aegis upgrade workflow, the snapshot with the **highest Snapper ID** should normally be the snapshot created immediately before the failed Pacman transaction.
-
-For example:
+Arch Aegis uses `snap-pac`, which normally creates a **pre/post snapshot pair** around Pacman transactions:
 
 ```text
-40
-41
-42    ← Most recent snapshot
+41    pre     ← System state before the Pacman transaction
+42    post    ← System state after the Pacman transaction
 ```
 
-In this case, the expected snapshot to restore would be:
+When recovering from a failed upgrade, the snapshot to restore is normally the **`pre` snapshot associated with the failed Pacman transaction**, not necessarily the snapshot with the highest ID.
 
-```text
-/mnt/@snapshots/42/snapshot
-```
-
-Before restoring it, inspect its Snapper metadata:
+Inspect the available snapshots and their metadata:
 
 ```bash
-cat /mnt/@snapshots/42/info.xml
+snapper -c root list
 ```
 
-The `info.xml` file contains metadata associated with the snapshot, including its creation date and description.
+If Snapper cannot be used directly from the live environment, inspect the metadata stored in each snapshot directory:
 
-For example:
-
-```xml
-<snapshot>
-  <type>single</type>
-  <num>42</num>
-  <date>2026-09-08 10:30:00</date>
-  <description>...</description>
-  ...
-</snapshot>
+```bash
+grep -E '<type>|<date>|<description>|<pre_num>' /mnt/@snapshots/*/info.xml
 ```
 
-> 💡 **Snapshot selection:** Arch Aegis creates a root snapshot before the relevant Pacman transaction. Therefore, when recovering immediately after a failed upgrade, the snapshot with the highest Snapper ID should normally represent the root filesystem state immediately before that upgrade.
+You can also inspect a specific snapshot:
+
+```bash
+cat /mnt/@snapshots/<SNAPSHOT_ID>/info.xml
+```
+
+> 💡 **Snapshot selection:** `snap-pac` creates a `pre` snapshot before the Pacman transaction and a corresponding `post` snapshot afterwards.
 >
-> The snapshot metadata stored in `info.xml` provides an additional verification step before performing the rollback. Check its date and description to confirm that the selected snapshot corresponds to the failed upgrade.
+> For rollback after a problematic upgrade, select the **`pre` snapshot**, because it represents the system state before package modifications were applied.
 >
-> ⚠️ Snapper records the `<date>` value in `info.xml` in **UTC**. Take the difference between UTC and local time into account when comparing it with other timestamps.
+> The `post` snapshot may have a higher Snapper ID, so the highest snapshot ID must **not** be used as the sole selection criterion.
 >
-> If additional snapshots or transactions occurred after the failed upgrade, do not automatically select the highest ID. Instead, identify the snapshot whose metadata corresponds to the desired pre-upgrade state.
+> Verify the snapshot type, creation date and description in `info.xml` and ensure that they correspond to the failed Pacman transaction.
+>
+> ⚠️ Snapper stores the `<date>` value in `info.xml` in **UTC**. Take the difference between UTC and local time into account when comparing it with other timestamps.
 
 ### 💾 Step 5 — Identify & Verify the Corresponding EFI Backup
 
@@ -1797,9 +1794,9 @@ ls -lht /mnt/@efibck
 
 The snapshot and EFI backup should both correspond to the system state immediately before the failed transaction.
 
-> 💡 **Recovery pair:** Under the normal Arch Aegis upgrade workflow, the snapshot with the **highest Snapper ID** and the EFI backup with the **most recent timestamp** should normally form the recovery pair, since both are created before the relevant system upgrade.
+> 💡 **Recovery pair:** Under the normal Arch Aegis upgrade workflow, the **`pre` snapshot created by `snap-pac` for the failed Pacman transaction** and the EFI backup created immediately before that same transaction form the expected recovery pair.
 >
-> The snapshot can be verified using its `info.xml` metadata, while the EFI backup can be identified from the timestamp embedded in its filename and its filesystem modification time.
+> The Snapper snapshot should be verified through its `info.xml` metadata, while the EFI backup can be identified from the timestamp embedded in its filename and its filesystem modification time.
 >
 > ⚠️ Always verify that both correspond to the same pre-upgrade period before restoring them. This is especially important after a kernel upgrade because the signed UKI stored on the EFI System Partition and the corresponding kernel modules stored in `/usr/lib/modules` must remain consistent.
 

@@ -32,6 +32,11 @@ crypt_device="/dev/mapper/${crypt_name}"
 efi_size="500M"
 swap_size="4g"
 
+# Sector size used for EFI, LUKS2 and BTRFS.
+# 4096 bytes is the Arch Aegis default and can be automatically adjusted
+# during pre-flight checks to match the physical block size of the target disk.
+sector_size="4096"
+
 
 # ------------------------------------------------------------------------------
 # MOUNT OPTIONS
@@ -99,10 +104,22 @@ pause_step() {
 confirm_yes() {
   local answer
 
-  read -rp "$1 [y/N] " answer
-  answer=${answer,,}
+  while true; do
+    read -rp "$1 [Y/n] " answer
+    answer=${answer,,}
 
-  [[ "$answer" == "y" || "$answer" == "yes" ]]
+    case "$answer" in
+      ""|y|yes)
+        return 0
+        ;;
+      n|no)
+        return 1
+        ;;
+      *)
+        echo "Please answer yes or no."
+        ;;
+    esac
+  done
 }
 
 
@@ -133,12 +150,25 @@ if [[ ! -b "$disk" ]]; then
   exit 1
 fi
 
+
+# ------------------------------------------------------------------------------
+# TARGET DISK
+# ------------------------------------------------------------------------------
+
 echo "Target disk:"
 echo
 
-lsblk -d -o NAME,SIZE,MODEL "$disk"
+lsblk -d \
+  -o NAME,SIZE,MODEL,LOG-SEC,PHY-SEC \
+  "$disk"
 
 echo
+
+
+# ------------------------------------------------------------------------------
+# INSTALLATION CONFIRMATION
+# ------------------------------------------------------------------------------
+
 echo "WARNING"
 echo
 echo "The following disk will be used:"
@@ -154,6 +184,54 @@ if [[ "$confirm_install" != "YES" ]]; then
   echo
   echo "Installation canceled."
   exit 0
+fi
+
+pause_step
+
+
+# ------------------------------------------------------------------------------
+# SECTOR SIZE
+# ------------------------------------------------------------------------------
+
+physical_block_size=$(
+  cat "/sys/block/$(basename "$disk")/queue/physical_block_size"
+)
+
+echo "Sector configuration:"
+echo
+echo "Physical block size : ${physical_block_size} bytes"
+echo "Configured size     : ${sector_size} bytes"
+echo
+
+if [[ "$physical_block_size" == "$sector_size" ]]; then
+  echo "[OK] Configured sector size matches the disk physical block size."
+else
+  echo "[WARNING] Configured sector size does not match the disk physical block size."
+  echo
+
+  if confirm_yes "Use the disk physical block size (${physical_block_size} bytes) instead?"; then
+    sector_size="$physical_block_size"
+
+    echo
+    echo "[OK] Sector size automatically adjusted."
+  else
+    echo
+    echo "[WARNING] Keeping configured sector size: ${sector_size} bytes"
+  fi
+fi
+
+echo
+echo "Effective sector configuration:"
+echo
+echo "Physical block size : ${physical_block_size} bytes"
+echo "Sector size used    : ${sector_size} bytes"
+
+if [[ "$physical_block_size" == "$sector_size" ]]; then
+  echo
+  echo "[OK] Sector configuration matches the target disk."
+else
+  echo
+  echo "[WARNING] Sector configuration does not match the target disk."
 fi
 
 pause_step
@@ -176,7 +254,6 @@ sgdisk --zap-all "$disk"
 echo
 echo "[OK] Partition structures removed."
 
-
 echo
 echo "[2/2] Checking for remaining filesystem signatures..."
 echo
@@ -197,7 +274,6 @@ else
   echo
   echo "[SKIP] Disk signature cleanup skipped."
 fi
-
 
 echo
 echo "Current disk state:"
@@ -221,7 +297,6 @@ echo "Checking persistent TPM objects..."
 echo
 
 handles=$(tpm2_getcap handles-persistent | awk '{print $2}' || true)
-
 
 if [[ -z "$handles" ]]; then
   echo "[OK] No persistent TPM objects found."
@@ -254,7 +329,6 @@ else
   fi
 fi
 
-
 echo
 echo "Verifying TPM state..."
 echo
@@ -262,14 +336,12 @@ echo
 remaining_persistent=$(tpm2_getcap handles-persistent || true)
 remaining_transient=$(tpm2_getcap handles-transient || true)
 
-
 if [[ -z "$remaining_persistent" ]]; then
   echo "Persistent objects : none"
 else
   echo "Persistent objects:"
   echo "$remaining_persistent"
 fi
-
 
 if [[ -z "$remaining_transient" ]]; then
   echo "Transient objects  : none"
@@ -307,7 +379,6 @@ read -rp "EFI cleanup choice [all]: " efi_cleanup
 
 efi_cleanup=${efi_cleanup:-all}
 efi_cleanup=${efi_cleanup,,}
-
 
 if [[ "$efi_cleanup" == "all" ]]; then
   echo
@@ -352,7 +423,6 @@ else
     fi
   done
 fi
-
 
 echo
 echo "EFI boot entries after cleanup:"
@@ -406,10 +476,8 @@ sgdisk \
   --change-name=2:"Linux LUKS" \
   "$disk"
 
-
 partprobe "$disk"
 udevadm settle
-
 
 echo
 echo "[OK] Partitioning completed."
@@ -421,7 +489,6 @@ echo
 lsblk \
   -o NAME,SIZE,TYPE,PARTTYPE,PARTLABEL \
   "$disk"
-
 
 echo
 echo "Partition alignment:"
@@ -449,14 +516,15 @@ echo
 
 echo "Formatting EFI System Partition..."
 echo
+echo "Sector size: ${sector_size} bytes"
+echo
 
 mkfs.vfat \
   -F 32 \
   -n "SYSTEM" \
-  -S 4096 \
+  -S "$sector_size" \
   -s 1 \
   "$efi_partition"
-
 
 echo
 echo "[OK] EFI System Partition formatted."
@@ -470,6 +538,8 @@ pause_step
 
 echo "Creating LUKS2 encrypted container..."
 echo
+echo "Sector size: ${sector_size} bytes"
+echo
 
 cryptsetup \
   --type luks2 \
@@ -479,11 +549,10 @@ cryptsetup \
   --key-size 512 \
   --pbkdf argon2id \
   --label "Linux LUKS" \
-  --sector-size 4096 \
+  --sector-size "$sector_size" \
   --use-urandom \
   --verify-passphrase \
   luksFormat "$luks_partition"
-
 
 echo
 echo "[OK] LUKS2 container created."
@@ -502,7 +571,6 @@ cryptsetup \
   "$luks_partition" \
   "$crypt_name"
 
-
 echo
 echo "[OK] LUKS container opened:"
 echo
@@ -518,12 +586,13 @@ pause_step
 
 echo "Formatting encrypted volume as BTRFS..."
 echo
+echo "Sector size: ${sector_size} bytes"
+echo
 
 mkfs.btrfs \
   -L "Arch Linux" \
-  -s 4096 \
+  -s "$sector_size" \
   "$crypt_device"
-
 
 echo
 echo "[OK] BTRFS filesystem created."
@@ -556,12 +625,10 @@ mount \
   "$crypt_device" \
   /mnt
 
-
 echo "Creating root subvolume:"
 echo
 
 btrfs subvolume create /mnt/@
-
 
 echo
 echo "Creating Arch Aegis subvolumes:"
@@ -572,7 +639,6 @@ for subvol in "${subvolumes[@]}"; do
 
   btrfs subvolume create "/mnt/$subvol"
 done
-
 
 echo
 echo "Created BTRFS subvolumes:"
@@ -682,7 +748,6 @@ for subvol in "${subvolumes[@]}"; do
     "$mountpoint"
 done
 
-
 echo
 echo "Current mount layout:"
 echo
@@ -706,7 +771,7 @@ echo
 
 chattr +C /mnt/var/lib/libvirt/images
 
-
+echo
 echo "Directory attributes:"
 echo
 
@@ -733,13 +798,11 @@ btrfs filesystem mkswapfile \
 
 chmod 600 /mnt/.swap/swapfile
 
-
 if [[ ! -f /mnt/.swap/swapfile ]]; then
   echo
   echo "[ERROR] Swap file creation failed."
   exit 1
 fi
-
 
 echo
 echo "Swap file:"
@@ -782,7 +845,6 @@ pacstrap /mnt \
   plymouth \
   zram-generator
 
-
 echo
 echo "[OK] Base system installation completed."
 
@@ -809,7 +871,6 @@ echo
 
 genfstab -U /mnt > /mnt/etc/fstab
 
-
 echo "[OK] fstab generated."
 
 echo
@@ -819,7 +880,6 @@ echo "--------------------------------------------------------------"
 echo
 
 cat /mnt/etc/fstab
-
 
 echo
 echo "Review the generated file manually:"
@@ -874,7 +934,6 @@ part2_align=$(parted "$disk" align-check optimal 2 || true)
 echo "EFI partition  : $part1_align"
 echo "LUKS partition : $part2_align"
 
-
 if [[ "$part1_align" == *"aligned"* &&
       "$part2_align" == *"aligned"* ]]; then
   echo
@@ -888,17 +947,23 @@ pause_step
 
 
 # ------------------------------------------------------------------------------
-# PHYSICAL BLOCK SIZE
+# SECTOR SIZE
 # ------------------------------------------------------------------------------
 
 physical_block_size=$(
   cat "/sys/block/$(basename "$disk")/queue/physical_block_size"
 )
 
-if [[ "$physical_block_size" == "4096" ]]; then
-  echo "[OK] NVMe physical block size: 4096 bytes"
+echo "Disk sector configuration:"
+echo
+echo "Physical block size : ${physical_block_size} bytes"
+echo "Configured size     : ${sector_size} bytes"
+echo
+
+if [[ "$physical_block_size" == "$sector_size" ]]; then
+  echo "[OK] Configured sector size matches the disk physical block size."
 else
-  echo "[WARNING] NVMe physical block size: ${physical_block_size} bytes"
+  echo "[WARNING] Configured sector size does not match the disk physical block size."
 fi
 
 pause_step

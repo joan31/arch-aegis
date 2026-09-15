@@ -779,13 +779,13 @@ HOOKS=(systemd plymouth autodetect microcode modconf kms keyboard sd-vconsole bl
 - 🔐 Configure the encrypted root volume for early userspace
 
 ```bash
-nvim /etc/crypttab.initramfs
+nvim /etc/crypttab
 ```
 
 - Content:
 
-```bash
-cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard,x-initrd.attach
+```text
+cryptarch UUID=<NVME-UUID> none x-initrd.attach,tpm2-device=auto,password-echo=no,x-systemd.device-timeout=0,timeout=0,no-read-workqueue,no-write-workqueue,discard
 ```
 
 - Get `<NVME-UUID>` directly from Neovim:
@@ -794,7 +794,17 @@ cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.devi
 :read ! lsblk -dno UUID /dev/nvme0n1p2
 ```
 
-> 💡 **`crypttab.initramfs` options explained**
+> ⚠️ **`/etc/crypttab.initramfs` is deprecated**
+>
+> Older `mkinitcpio` configurations used `/etc/crypttab.initramfs` to define encrypted devices that had to be unlocked during early userspace.
+>
+> This file is now deprecated. The encrypted root device should instead be defined in the standard `/etc/crypttab` file and marked with the `x-initrd.attach` option.
+>
+> `x-initrd.attach` identifies the entry as required during the initramfs stage, allowing the `sd-encrypt` hook and systemd-based initramfs to handle the encrypted root volume during early boot.
+>
+> This also allows both early-userspace and regular userspace encrypted devices to be described in the same `/etc/crypttab` configuration, with `x-initrd.attach` distinguishing devices that must be available from the initramfs.
+
+> 💡 **`crypttab` options explained**
 >
 > The entry follows the standard `crypttab` format:
 >
@@ -805,6 +815,7 @@ cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.devi
 > - `cryptarch` — Creates the decrypted device mapping as `/dev/mapper/cryptarch`.
 > - `UUID=<NVME-UUID>` — Identifies the LUKS2 partition by UUID instead of relying on a potentially variable device name such as `/dev/nvme0n1p2`.
 > - `none` — No external key file is specified. The volume can be unlocked through the enrolled TPM2 token or, when necessary, with the LUKS recovery passphrase.
+> - `x-initrd.attach` — Marks the encrypted root device for setup during the initramfs stage and keeps the mapping attached until the root filesystem has been unmounted during shutdown.
 > - `tpm2-device=auto` — Automatically discovers the TPM2 device and attempts to unlock the LUKS2 volume using the enrolled TPM2 token.
 > - `password-echo=no` — Prevents the LUKS passphrase from being displayed while it is entered manually.
 > - `x-systemd.device-timeout=0` — Allows systemd to wait indefinitely for the encrypted device to become available.
@@ -812,13 +823,14 @@ cryptarch UUID=<NVME-UUID> none tpm2-device=auto,password-echo=no,x-systemd.devi
 > - `no-read-workqueue` — Disables the dm-crypt read workqueue, reducing additional I/O scheduling overhead on fast storage such as NVMe devices.
 > - `no-write-workqueue` — Disables the dm-crypt write workqueue for the same reason.
 > - `discard` — Allows discard/TRIM requests to pass through the dm-crypt layer to the underlying SSD/NVMe device.
-> - `x-initrd.attach` — Marks the encrypted root device as being attached during the initramfs stage, allowing systemd to keep the mapping available until the root filesystem has been unmounted during shutdown.
 >
 > 🔐 TPM2 provides convenient automatic unlocking but does not replace the LUKS recovery passphrase. If TPM2 automatic unlocking fails, the passphrase remains available as an independent recovery method.
 >
 > 💾 Allowing `discard` through dm-crypt is required for filesystem discard/TRIM requests to reach the underlying SSD.
 >
 > ⚡ `no-read-workqueue` and `no-write-workqueue` are performance-oriented dm-crypt options intended to reduce workqueue overhead on fast storage. They are optimizations rather than requirements for LUKS2 or TPM2 operation.
+>
+> 💡 Only encrypted devices required during **early userspace** need `x-initrd.attach`. Encrypted devices intended to be activated later by the running system can remain in `/etc/crypttab` without this option.
 
 ### 🧵 Step 15 — Kernel Command Line Configuration
 

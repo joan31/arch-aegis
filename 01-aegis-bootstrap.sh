@@ -56,7 +56,7 @@ home_opts="nodev,nosuid"
 virt_opts="rw,noatime,nodev,nosuid,noexec,ssd,discard=async,commit=120"
 
 # EFI System Partition
-efi_opts="rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022"
+efi_opts="rw,noatime,nodev,nosuid,noexec,fmask=0077,dmask=0077"
 
 
 # ------------------------------------------------------------------------------

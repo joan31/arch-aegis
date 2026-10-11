@@ -55,8 +55,8 @@ Designed around **security, reliability, simplicity and system recovery**, it co
 - 🧊 **BTRFS** with a carefully designed subvolume layout and **snapper** for system snapshots and rollback
 - 🔐 **LUKS2** encrypted system volume with **TPM2** auto-unlocking and passphrase fallback
 - 🚀 **Direct EFI boot** using a signed **Unified Kernel Image (UKI)** — no traditional bootloader required
-- 💥 Full **Secure Boot** support
-- 🧠 Modern `mkinitcpio` using **systemd init hooks**
+- 💥 Full **Secure Boot** support with custom keys managed by `sbctl`
+- 🧠 Modern `mkinitcpio` using **systemd init hooks**, with direct UKI generation through `ukify` and **signed PCR policies**
 - 🧵 **zRAM** enabled for fast compressed in-memory swap
 - 💾 Encrypted **swap file** on BTRFS as zRAM fallback
   - Uses a transient encryption key generated at boot from `/dev/urandom`
@@ -74,6 +74,7 @@ Designed around **security, reliability, simplicity and system recovery**, it co
 - Fallback passphrase support
 - **Secure Boot** enabled with custom enrolled keys
 - Boot chain based on **signed Unified Kernel Images**
+- **Signed PCR policies** embedded in UKIs using `ukify` and `systemd-measure`
 
 ### 🧊 Filesystem
 - **BTRFS** with a carefully designed subvolume layout
@@ -98,11 +99,15 @@ Designed around **security, reliability, simplicity and system recovery**, it co
 ### ⚙️ Boot Process
 - **No traditional bootloader** — no GRUB or systemd-boot
 - EFI directly loads a **signed Unified Kernel Image (UKI)**
-- UKIs are built with `mkinitcpio` and contain:
+- UKIs are generated with `mkinitcpio` and assembled using `ukify`
+- Direct UKI generation without persistent standalone initramfs images
+- Automatic Secure Boot signing using `sbctl`
+- UKIs contain:
   - Kernel
   - Initramfs
   - Kernel command line
   - CPU microcode
+  - Signed PCR policies
 
 ### 🧠 Init System
 - `mkinitcpio` using:
@@ -262,7 +267,7 @@ Boot process:
 | 📍 Mount Point | 💽 Device | 🗂️ Subvolumes | ⚙️ Mount Options |
 |---|---|---|---|
 | `/` | `/dev/mapper/cryptarch` | `@` | `rw,noatime,compress=zstd:3,ssd,discard=async,commit=120` |
-| `/efi` | `/dev/nvme0n1p1` | *(N/A)* | `rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022` |
+| `/efi` | `/dev/nvme0n1p1` | *(N/A)* | `rw,noatime,nodev,nosuid,noexec,fmask=0077,dmask=0077` |
 | `/.swap` | `/dev/mapper/cryptarch` | `@swap` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/.snapshots` | `/dev/mapper/cryptarch` | `@snapshots` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
 | `/.efibackup` | `/dev/mapper/cryptarch` | `@efibck` | `rw,noatime,nodev,nosuid,noexec,compress=zstd:3,ssd,discard=async,commit=120` |
@@ -285,8 +290,8 @@ Boot process:
 | `nodev` | Prevent character/block device files from being interpreted (security hardening). | 🔒 Security |
 | `nosuid` | Disable set-user-ID and set-group-ID bits (security hardening). | 🔒 Security |
 | `noexec` | Prevent execution of binaries on this mount (security hardening). | 🔒 Security |
-| `fmask=0022` | File mask for default file permissions on FAT32 (755 for files). | 🔒 Security |
-| `dmask=0022` | Directory mask for default directory permissions on FAT32 (755 for directories). | 🔒 Security |
+| `fmask=0077` | File mask for default file permissions on FAT32 (700 for files). | 🔒 Security |
+| `dmask=0077` | Directory mask for default directory permissions on FAT32 (700 for directories). | 🔒 Security |
 | `compress=zstd:3` | Use Zstandard compression at level 3, providing a good balance between compression ratio, CPU usage and performance. | 💾 Performance/Storage |
 | `ssd` | Enable BTRFS SSD-specific behavior for SSD/NVMe storage. | 🚀 Performance |
 | `discard=async` | Process TRIM/discard operations asynchronously, reducing the performance impact of synchronous discard operations. | 💾 Performance |
@@ -365,7 +370,7 @@ The guide covers:
 - 📸 **Snapper configuration for system snapshots and rollback**
 - 📦 **Base system installation**
 - 🧰 **System configuration inside the chroot environment**
-- 🧬 **Unified Kernel Image (UKI) generation and Secure Boot signing**
+- 🧬 **Unified Kernel Image (UKI) generation with `mkinitcpio` and `ukify`, signed PCR policies and Secure Boot signing**
 - ⚙️ **EFI configuration and direct boot entry creation**
 - 🧵 **zRAM configuration**
 - 🌀 **Encrypted BTRFS swap file configuration**
@@ -481,7 +486,7 @@ mkdir -p /mnt/{efi,.swap,.snapshots,.efibackup,var/{log,tmp,cache,lib/libvirt/im
 - 🖥️ Mount EFI system partition with hardened mount options
 
 ```bash
-mount -o rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022 /dev/nvme0n1p1 /mnt/efi
+mount -o rw,noatime,nodev,nosuid,noexec,fmask=0077,dmask=0077 /dev/nvme0n1p1 /mnt/efi
 ```
 
 - 🧷 Mount other BTRFS subvolumes
@@ -534,10 +539,10 @@ chmod 600 /mnt/.swap/swapfile
 
 ### 📦 Step 7 — Install Base System
 
-- 🧱 Install base packages, kernel + firmwares, EFI tools, btrfs support, text editor, secure boot tools, splash screen and zRam generator service
+- 🧱 Install base packages, kernel + firmwares, EFI tools, btrfs support, text editor, secure boot tools, uki assembler, splash screen and zRam generator service
 
 ```bash
-pacstrap /mnt base base-devel linux linux-headers linux-firmware amd-ucode neovim efibootmgr btrfs-progs sbctl plymouth zram-generator
+pacstrap /mnt base base-devel linux linux-headers linux-firmware amd-ucode neovim efibootmgr btrfs-progs sbctl systemd-ukify plymouth zram-generator
 ```
 
 > 💡 `base-devel` is required for building packages from the AUR or compiling software from source, and `linux-headers` is needed for DKMS to build and maintain kernel modules.
@@ -560,7 +565,7 @@ cat /mnt/etc/fstab
 
 ```bash
 UUID=<BTRFS-UUID-PARTITION>      /       btrfs      rw,noatime,compress=zstd:3,ssd,discard=async,commit=120,subvol=/@      0 0
-UUID=<EFI-UUID-PARTITION>        /efi    vfat       rw,noatime,nodev,nosuid,noexec,fmask=0022,dmask=0022                   0 2
+UUID=<EFI-UUID-PARTITION>        /efi    vfat       rw,noatime,nodev,nosuid,noexec,fmask=0077,dmask=0077                   0 2
 ```
 
 > 💡 **Why `0 0` for BTRFS and `0 2` for the EFI System Partition?**
@@ -893,7 +898,51 @@ fallback_options="-S autodetect"
 
 > 💡 `default_options="--splash=/usr/share/systemd/bootctl/splash-arch.bmp"` is commented out by default and can be uncommented to enable the splash screen, but it may be redundant if **Plymouth** is used.
 
-### 🔐 Step 17 — Secure Boot with sbctl
+### 🔏 Step 17 — UKI PCR Signing with ukify
+
+- 🔑 Generate the PCR signing key pair
+
+```bash
+ukify genkey --pcr-private-key=/etc/systemd/tpm2-pcr-private-key-initrd.pem --pcr-public-key=/etc/systemd/tpm2-pcr-public-key-initrd.pem
+```
+
+- ⚙️ Configure ukify
+
+```bash
+nvim /etc/kernel/uki.conf
+```
+
+- Content:
+
+```text
+[UKI]
+PCRPKey=/etc/systemd/tpm2-pcr-public-key-initrd.pem
+SignInitrdPCRs=yes
+
+[PCRSignature:initrd]
+Phases=enter-initrd
+PCRPrivateKey=/etc/systemd/tpm2-pcr-private-key-initrd.pem
+PCRPublicKey=/etc/systemd/tpm2-pcr-public-key-initrd.pem
+```
+
+> 💡 **How mkinitcpio and ukify work together**
+>
+> When `ukify` is installed, `mkinitcpio` automatically uses it to assemble Unified Kernel Images.
+>
+> - `mkinitcpio` generates the initramfs and manages the default and fallback presets.
+> - `ukify` assembles the UKIs and generates signed PCR policies using `systemd-measure`.
+> - `sbctl` signs the resulting UKIs for UEFI Secure Boot.
+>
+> The initramfs is generated as a temporary build artifact and embedded directly into the UKI. No standalone `initramfs-linux.img` needs to be retained.
+>
+> The `.pcrpkey` section contains the public key used to verify PCR policy signatures, while `.pcrsig` contains the generated signatures.
+>
+> PCR policy signing and Secure Boot signing are separate mechanisms. The PCR signing keys do not replace the Secure Boot keys managed by `sbctl`.
+
+> [!IMPORTANT]
+> Keep the PCR private key secure. Never store it on the EFI System Partition...
+
+### 🔐 Step 18 — Secure Boot with sbctl
 
 - 🔑 Create Secure Boot keys
 
@@ -955,7 +1004,7 @@ rm /boot/initramfs-*.img
 >
 > These leftover images can therefore be safely removed.
 
-### 💻 Step 18 — EFI Boot Entry
+### 💻 Step 19 — EFI Boot Entry
 
 - 🧷 Register UKI with UEFI firmware
 
@@ -993,7 +1042,7 @@ efibootmgr -o 0000,0001
 > efibootmgr -o 0003,0004
 > ```
 
-### 🧠 Step 19 — zRam Setup
+### 🧠 Step 20 — zRam Setup
 
 - ⚙️ Configure zRam swap device (primary in-memory compressed swap)
 
@@ -1026,7 +1075,7 @@ vm.watermark_scale_factor = 125
 vm.page-cluster = 0
 ```
 
-### 🔄 Step 20 — Encrypted Swap Setup
+### 🔄 Step 21 — Encrypted Swap Setup
 
 - 🔐 Add encrypted swap mapping using `/dev/urandom` (secure swapfile via device-mapper)
 
@@ -1053,7 +1102,7 @@ nvim /etc/fstab
 /dev/mapper/swap      none      swap      pri=0      0 0
 ```
 
-### 📦 Step 21 — Pacman Configuration
+### 📦 Step 22 — Pacman Configuration
 
 - 📦 Enable multilib, candy theme, parallel downloads & ignore snapper cron jobs
 
@@ -1073,7 +1122,7 @@ ILoveCandy
 Include = /etc/pacman.d/mirrorlist
 ```
 
-### 🌐 Step 22 — Network Configuration
+### 🌐 Step 23 — Network Configuration
 
 > 🔀 Choose one network management method depending on your setup
 - ⚙️ `systemd-networkd` → lightweight, minimal and server-friendly — configured for wired networking in this guide
@@ -1123,7 +1172,7 @@ RouteMetric=100
 pacman -S networkmanager
 ```
 
-### 🔌 Step 23 — Basic Packages: Bluetooth, Snapper, Pacman Cache Service, Reflector, Firewall
+### 🔌 Step 24 — Basic Packages: Bluetooth, Snapper, Pacman Cache Service, Reflector, Firewall
 
 - 📦 Install essential tools
 
@@ -1131,7 +1180,7 @@ pacman -S networkmanager
 pacman -S bluez snapper pacman-contrib reflector firewalld
 ```
 
-### 🕰️ Step 24 — Time Sync with French NTP Servers
+### 🕰️ Step 25 — Time Sync with French NTP Servers
 
 - ⏲️ Set systemd-timesyncd to use French pool servers
 
@@ -1147,7 +1196,7 @@ NTP=0.fr.pool.ntp.org 1.fr.pool.ntp.org 2.fr.pool.ntp.org 3.fr.pool.ntp.org
 FallbackNTP=0.arch.pool.ntp.org 1.arch.pool.ntp.org 2.arch.pool.ntp.org 3.arch.pool.ntp.org
 ```
 
-### 🚀 Step 25 — I/O Scheduler Tuning for NVMe
+### 🚀 Step 26 — I/O Scheduler Tuning for NVMe
 
 - 📉 Disable I/O scheduler on NVMe device to use none (for performance)
 
@@ -1161,7 +1210,7 @@ nvim /etc/udev/rules.d/60-schedulers.rules
 ACTION=="add|change", KERNEL=="nvme[0-9]*", ENV{DEVTYPE}=="disk", ATTR{queue/scheduler}="none"
 ```
 
-### 🌐 Step 26 — Reflector Configuration (Update Mirrorlist)
+### 🌐 Step 27 — Reflector Configuration (Update Mirrorlist)
 
 - 🌍 Optimize pacman mirrors by age, country, and protocol
 
@@ -1179,7 +1228,7 @@ nvim /etc/xdg/reflector/reflector.conf
 --sort age
 ```
 
-### ⚙️ Step 27 — Enable Key Services (Networking, Bluetooth, Time, Firewall, Maintenance)
+### ⚙️ Step 28 — Enable Key Services (Networking, Bluetooth, Time, Firewall, Maintenance)
 
 - 🌐 Enable network services (based on your previous choice)
 
@@ -1231,7 +1280,7 @@ systemctl mask hibernate.target hybrid-sleep.target
 >  
 > 💡 On KDE Plasma, this also removes the hibernation option from the power menu, making it cleaner and less confusing.
 
-### 🧰 Step 28 — Configure Default System Editors
+### 🧰 Step 29 — Configure Default System Editors
 
 - 📝 Define default system editor (used by system tools like systemctl edit, git, etc.)
 
@@ -1252,7 +1301,7 @@ VISUAL=nvim
 export EDITOR=nvim VISUAL=nvim
 ```
 
-### 🔑 Step 29 — Configure sudo
+### 🔑 Step 30 — Configure sudo
 
 - 🛡️ Grant sudo to wheel group
 
@@ -1266,7 +1315,7 @@ visudo
 %wheel ALL=(ALL:ALL) ALL
 ```
 
-### 🚧 Step 30 — Compilation Optimization (makepkg)
+### 🚧 Step 31 — Compilation Optimization (makepkg)
 
 - 🧰 Tune makepkg flags for native arch, use /tmp for build
 
@@ -1294,7 +1343,7 @@ nvim /etc/makepkg.conf.d/rust.conf
 RUSTFLAGS="-C opt-level=2 -C target-cpu=native"
 ```
 
-### 🔇 Step 31 — Disable HDMI Audio (Optional)
+### 🔇 Step 32 — Disable HDMI Audio (Optional)
 
 > *⚠️ Hardware-specific configuration — this step reflects the hardware used by this installation and should be adapted or skipped depending on your own system and use case.*
 
@@ -1310,7 +1359,7 @@ nvim /etc/modprobe.d/blacklist.conf
 blacklist snd_hda_intel
 ```
 
-### 🔒 Step 32 — Disable Webcam Microphone (Optional)
+### 🔒 Step 33 — Disable Webcam Microphone (Optional)
 
 > *⚠️ Hardware-specific configuration — this step reflects the hardware used by this installation and should be adapted or skipped depending on your own system and use case.*
 
@@ -1326,7 +1375,7 @@ nvim /etc/udev/rules.d/90-blacklist-webcam-sound.rules
 SUBSYSTEM=="usb", DRIVER=="snd-usb-audio", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="085c", ATTR{authorized}="0"
 ```
 
-### ⚡ Step 33 — Allow games Group to Read CPU Power
+### ⚡ Step 34 — Allow games Group to Read CPU Power
 
 - 🎮 Grant members of the `games` group permission to read CPU package energy consumption through the Linux RAPL powercap interface.
 
@@ -1342,7 +1391,7 @@ SUBSYSTEM=="powercap", KERNEL=="intel-rapl:0", RUN+="/usr/bin/chgrp games /sys/%
 
 > ✅ This ensures users in the `games` group can access CPU energy readings without requiring root privileges — useful for monitoring tools or performance overlays.
 
-### 🔐 Step 34 — Set Root Password and Exit Chroot
+### 🔐 Step 35 — Set Root Password and Exit Chroot
 
 - 🔑 Set root password and exit chroot
 
@@ -1351,7 +1400,7 @@ passwd root
 exit
 ```
 
-### 🧭 Step 35 — DNS Stub Resolver via systemd-resolved
+### 🧭 Step 36 — DNS Stub Resolver via systemd-resolved
 
 > ⚠️ Only apply this step if you are using *systemd-networkd* (from Step 22)
 > ⏭️ Skip this step if you selected *NetworkManager*
@@ -1372,7 +1421,7 @@ ln -sf ../run/systemd/resolve/stub-resolv.conf /mnt/etc/resolv.conf
 >             └── /run/systemd/resolve/stub-resolv.conf
 > ```
 
-### 🚪 Step 36 — Unmount, Reboot into Firmware Setup
+### 🚪 Step 37 — Unmount, Reboot into Firmware Setup
 
 - 👋 Unmount and reboot into UEFI/BIOS to check if Secure Boot is enabled
 
@@ -1381,7 +1430,7 @@ umount -R /mnt
 systemctl reboot --firmware-setup
 ```
 
-### 🛡️ Step 37 — LUKS TPM2 Key Enrollment
+### 🛡️ Step 38 — LUKS TPM2 Key Enrollment
 
 - 🔒 Enroll TPM2 key (PCR 0 = firmware, PCR 7 = Secure Boot state)
 
@@ -1389,7 +1438,33 @@ systemctl reboot --firmware-setup
 systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+7 /dev/nvme0n1p2
 ```
 
-### 🎮 Step 38 — Shared games directory (multi-user Steam library...)
+> [!NOTE]
+> 🔍 **Optional verification — UKI, Secure Boot and TPM2**
+>
+> The following commands can be used to verify the configuration or troubleshoot boot-related issues:
+>
+> * Check TPM2 enrollment
+>
+>  ```bash
+> systemd-cryptenroll /dev/nvme0n1p2
+> ```
+>
+> * Inspect initialized NvPCRs
+>
+>  ```bash
+> systemd-analyze nvpcrs
+> ```
+>
+> * Verify PCR sections embedded in the UKI
+>
+>  ```bash
+> objdump -h /efi/EFI/Linux/arch-linux.efi | grep -E '\.pcrpkey|\.pcrsig'
+> objdump -h /efi/EFI/Linux/arch-linux-fallback.efi | grep -E '\.pcrpkey|\.pcrsig'
+> ```
+>
+> Signed PCR policies embedded in the UKI do not automatically modify the TPM2 PCR selection used for LUKS2 enrollment. The existing PCR `0+7` enrollment remains independent.
+
+### 🎮 Step 39 — Shared games directory (multi-user Steam library...)
 
 - 🕹️ Allow access and inheritance for users in the `games` group via ACL
 
@@ -1399,7 +1474,7 @@ chmod 2775 /opt/games
 setfacl -dm g:games:rwx /opt/games
 ```
 
-### 🧩 Step 39 — Configure Snapper after Reboot
+### 🧩 Step 40 — Configure Snapper after Reboot
 
 - 🔌 Unmount the default /.snapshots subvolume
 
@@ -1462,7 +1537,7 @@ TIMELINE_LIMIT_MONTHLY="0"
 TIMELINE_LIMIT_YEARLY="0"
 ```
 
-### 🛡️ Step 40 — Custom Pacman Hook to Backup /efi
+### 🛡️ Step 41 — Custom Pacman Hook to Backup /efi
 
 - 🪝 Create a hook to automatically backup /efi before critical updates
 
@@ -1547,7 +1622,7 @@ fi
 chmod 750 /usr/local/sbin/efi_backup.sh
 ```
 
-### ⏲️ Step 41 — Enable Maintenance Timers
+### ⏲️ Step 42 — Enable Maintenance Timers
 
 - 🕒 Enable periodic TRIM for SSD/NVMe storage
 
@@ -1569,7 +1644,7 @@ systemctl enable snapper-timeline.timer
 systemctl enable snapper-cleanup.timer
 ```
 
-### 🧷 Step 42 — Enable Pacman Transaction Snapshots
+### 🧷 Step 43 — Enable Pacman Transaction Snapshots
 
 - 🧩 Install snap-pac to snapshot before and after pacman operations
 
@@ -1577,9 +1652,9 @@ systemctl enable snapper-cleanup.timer
 pacman -S snap-pac
 ```
 
-### 🗑️ Step 43 — Clean Snapper Initial Snapshots Manually
+### 🗑️ Step 44 — Clean Snapper Initial Snapshots Manually
 
-- 📋 List snapshots (🔍)
+- 📋 List snapshots
 
 ```bash
 snapper -c root list
@@ -1591,12 +1666,20 @@ snapper -c root list
 snapper -c root delete 1-2
 ```
 
-### 📸 Step 44 — Take Initial System Snapshot
+### 📸 Step 45 — Take Initial System Snapshot
 
 - 🧊 Manually create the first system snapshot after full setup
 
 ```bash
 snapper -c root create -d "init"
+```
+
+### 🔎 Step 46 — System Verification (Optional)
+
+- 🩺 Check for failed systemd services after `reboot`
+
+```bash
+systemctl --failed
 ```
 
 ---

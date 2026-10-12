@@ -866,7 +866,7 @@ root=/dev/mapper/cryptarch rootfstype=btrfs rootflags=subvol=@ ro loglevel=3 qui
 - 🧠 Disable kernel zswap to avoid duplicate swap compression when using zRAM as the primary swap device
 
 ```bash
-nvim /etc/cmdline.d/02-zswap.conf
+nvim /etc/cmdline.d/02-no-zswap.conf
 ```
 
 - Content:
@@ -874,6 +874,32 @@ nvim /etc/cmdline.d/02-zswap.conf
 ```text
 zswap.enabled=0
 ```
+
+- 🔐 Configure kernel security
+
+```bash
+nvim /etc/cmdline.d/03-security.conf
+```
+
+- Content:
+
+```text
+lockdown=integrity
+```
+
+> 💡 **Why `lockdown=integrity`?**
+>
+> Linux Kernel Lockdown provides three security modes:
+>
+> - `none`: No lockdown restrictions.
+> - `integrity`: Prevents certain operations that could compromise kernel integrity, even when performed by root.
+> - `confidentiality`: Extends integrity protection by restricting access to sensitive kernel information.
+>
+> The `integrity` mode provides an additional security layer, particularly when combined with Secure Boot.
+>
+> ⚠️ Kernel Lockdown may restrict unsigned kernel modules, low-level debugging tools and hibernation.
+>
+> Additional kernel security parameters may be added to this file later, after evaluating their compatibility and potential performance impact.
 
 ### 🧬 Step 16 — Initramfs Preset for Unified Kernel Image (UKI)
 

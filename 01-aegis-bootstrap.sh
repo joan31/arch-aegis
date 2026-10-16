@@ -344,7 +344,7 @@ echo
 echo "This operation does NOT reset TPM PCR measurements."
 echo
 
-if confirm_yes "Clear the TPM completely?"; then
+if confirm_yes "Reset TPM storage and authorization hierarchies?"; then
   echo
   echo "Clearing TPM..."
 

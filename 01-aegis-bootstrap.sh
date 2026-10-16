@@ -296,7 +296,7 @@ echo
 echo "Checking persistent TPM objects..."
 echo
 
-handles=$(tpm2_getcap handles-persistent | awk '{print $2}' || true)
+handles=$(tpm2_getcap handles-persistent | awk '{print $2}')
 
 if [[ -z "$handles" ]]; then
   echo "[OK] No persistent TPM objects found."
@@ -325,16 +325,44 @@ else
     echo "[OK] Persistent TPM objects removed."
   else
     echo
-    echo "[SKIP] TPM cleanup skipped."
+    echo "[SKIP] Persistent TPM cleanup skipped."
   fi
+fi
+
+echo
+echo "--------------------------------------------------------------"
+echo " TPM CLEAR"
+echo "--------------------------------------------------------------"
+echo
+
+echo "WARNING"
+echo
+echo "This operation resets the TPM storage hierarchy."
+echo "All TPM-protected secrets depending on the cleared"
+echo "hierarchies may become permanently inaccessible."
+echo
+echo "This operation does NOT reset TPM PCR measurements."
+echo
+
+if confirm_yes "Clear the TPM completely?"; then
+  echo
+  echo "Clearing TPM..."
+
+  tpm2_clear
+
+  echo
+  echo "[OK] TPM clear completed."
+else
+  echo
+  echo "[SKIP] TPM clear skipped."
 fi
 
 echo
 echo "Verifying TPM state..."
 echo
 
-remaining_persistent=$(tpm2_getcap handles-persistent || true)
-remaining_transient=$(tpm2_getcap handles-transient || true)
+remaining_persistent=$(tpm2_getcap handles-persistent)
+remaining_transient=$(tpm2_getcap handles-transient)
 
 if [[ -z "$remaining_persistent" ]]; then
   echo "Persistent objects : none"
@@ -387,7 +415,9 @@ if [[ "$efi_cleanup" == "all" ]]; then
 
   mapfile -t boot_entries < <(
     efibootmgr |
-      awk '/^Boot[0-9A-Fa-f]{4}/ { print substr($1, 5, 4) }'
+      awk '/^Boot[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]/ {
+        print substr($1, 5, 4)
+      }'
   )
 
   if [[ ${#boot_entries[@]} -eq 0 ]]; then
@@ -934,13 +964,11 @@ part2_align=$(parted "$disk" align-check optimal 2 || true)
 echo "EFI partition  : $part1_align"
 echo "LUKS partition : $part2_align"
 
-if [[ "$part1_align" == *"aligned"* &&
-      "$part2_align" == *"aligned"* ]]; then
-  echo
+if parted -s "$disk" align-check optimal 1 &&
+   parted -s "$disk" align-check optimal 2; then
   echo "[OK] Both partitions are optimally aligned."
 else
-  echo
-  echo "[WARNING] One or more partitions may not be optimally aligned."
+  echo "[WARNING] Partition alignment check failed."
 fi
 
 pause_step

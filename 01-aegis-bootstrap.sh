@@ -872,6 +872,7 @@ pacstrap /mnt \
   efibootmgr \
   btrfs-progs \
   sbctl \
+  systemd-ukify \
   plymouth \
   zram-generator
 
